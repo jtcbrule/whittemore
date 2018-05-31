@@ -53,7 +53,62 @@
   [effect & {:keys [do given] :or {do [] given []}}]
   (Query. effect do given))
 
-(def q "Alias for query" query)
+;;(def q "Alias for query" query)
+
+;; TODO: rename this info or 'information set' to match causal programming?
+;; TODO: definitely rename the params
+;; v is the observables, z is the surrogate experiment set
+
+(defrecord Data [vars surrogate])
+
+(defn data
+  "Construct a data object"
+  [v & {:keys [do*] :or {do* []}}]
+  (Data. v do*))
+
+(data [:x :y] :do* [:z_1 :z_2])
+
+
+;; TODO: this is broken; fix
+(defrecord Formula [s])
+
+
+(extend-protocol mc/PMimeConvertible
+  Formula
+  (to-mime [this]
+    (mc/stream-to-string
+      {:text/latex (str "$" (:s this) "$")})))
+
+
+;; This should be an implementaion of zIDC
+(defn identify
+  "zIDC algorithm
+   By default, assume P(v) as information set"
+  ([m q]
+   (Formula.
+     (str
+       "P("
+       
+       (clojure.string/join ", " (map name (:effect q)))
+
+       " \\mid "
+
+       "do("
+       (clojure.string/join ", " (map name (:do q)))
+       ")"
+
+       (if (empty? (:given q))
+         ""
+         (str ", " (clojure.string/join ", " (map name (:given q)))))
+       
+       ")"
+       
+       " = "
+       
+       "\\sum_{z'} P(z' \\mid x) \\sum_{x'} P(y \\mid x', z) P(x') ")))
+
+  ([m q d]
+   (identify m q)))
 
 
 (deftype SVG [s]
@@ -88,6 +143,7 @@
 
 (defrecord Latex [math])
 
+
 (extend-protocol mc/PMimeConvertible
   Latex
   (to-mime [this]
@@ -120,6 +176,22 @@
             ")")))
 
 
+(defn data->latex
+  "Query as latex
+   TODO: Fix broken"
+  [d]
+  (Latex.
+    (str
+      "P("
+
+      (clojure.string/join ", " (map name (:vars d)))
+      
+      " \\mid "
+      "do^*("
+      (clojure.string/join ", " (map name (:surrogate d)))
+      ")"
+
+      ")")))
 
 ;; For use outside Jupyter
 
@@ -180,3 +252,7 @@
      :y [:z]
      :x []}
     [:w :y :z]))
+
+(defn latex [math-string]
+  (Latex. math-string))
+
