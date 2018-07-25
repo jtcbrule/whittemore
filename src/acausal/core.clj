@@ -1,12 +1,11 @@
-(ns acausal.core
-  (:require [clojure.string]
-            [rhizome.viz]
-            [clojupyter.protocol.mime-convertible :as mc]))
+(ns acausal.core)
+  ;(:require [clojure.string]
+  ;          [clojupyter.protocol.mime-convertible :as mc]))
 
 
 (defn transpose
   "Compute the transpose of directed graph g
-   Returns a map of sets (adjacency list representation)
+   Returns a map of nodes -> set of nodes (adjacency list representation)
    TODO: make more efficient"
   [g]
   (apply merge-with
@@ -20,6 +19,7 @@
 
 
 
+;; TODO: consider restructuring; lots of redundant data here
 (defrecord Model [vars latents parents children])
 
 (defn model
@@ -72,14 +72,6 @@
 ;; TODO: this is broken; fix
 (defrecord Formula [s])
 
-
-(extend-protocol mc/PMimeConvertible
-  Formula
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (:s this) "$")})))
-
-
 ;; This should be an implementaion of zIDC
 (defn identify
   "zIDC algorithm
@@ -111,126 +103,12 @@
    (identify m q)))
 
 
-(deftype SVG [s]
-
-  mc/PMimeConvertible
-  (to-mime [_]
-    (mc/stream-to-string
-      {:image/svg+xml s})))
-
-
-(defn model->svg
-  "Model m as SVG
-  TODO: refactor dot and rendering steps, better label formatting"
-  [m]
-  (SVG.
-    (rhizome.viz/graph->svg
-      (keys (:children m))
-      (:children m)
-      :vertical? false
-      :node->descriptor (fn [n]
-                          (if (contains? (:latents m) n)
-                            {:label "", :shape "none", :width 0, :height 0}
-                            {:label (name n)})) ; :shape "circle"
-      :edge->descriptor (fn [i j]
-                          (if (contains? (:latents m) i)
-                            {:style "dotted"}
-                            {})))))
-
-
-
-;; LaTeX rendering
-
-(defrecord Latex [math])
-
-
-(extend-protocol mc/PMimeConvertible
-  Latex
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (:math this) "$")})))
-
-
-
-;; TODO: figure out how to distinguish information sets from queries
-(defn query->latex
-  "Query as latex
-   TODO: fix broken string stuff"
-  [q]
-  (Latex. (str
-            "P("
-
-            (clojure.string/join ", " (map name (:effect q)))
-
-            " \\mid "
-            
-            "do("
-            (clojure.string/join ", " (map name (:do q)))
-
-            ")"
-
-            (if (empty? (:given q))
-              ""
-              (str ", " (clojure.string/join ", " (map name (:given q)))))
-
-            ")")))
-
-
-(defn data->latex
-  "Query as latex
-   TODO: Fix broken"
-  [d]
-  (Latex.
-    (str
-      "P("
-
-      (clojure.string/join ", " (map name (:vars d)))
-      
-      " \\mid "
-      "do^*("
-      (clojure.string/join ", " (map name (:surrogate d)))
-      ")"
-
-      ")")))
-
-;; For use outside Jupyter
-
-(defn view-model
-  "View model m
-  TODO: refactor dot and rendering steps, better label formatting"
-  [m]
-  (rhizome.viz/view-graph
-    (keys (:children m))
-    (:children m)
-    :vertical? false
-    :node->descriptor (fn [n]
-                        (if (contains? (:latents m) n)
-                          {:label "", :shape "none", :width 0, :height 0}
-                          {:label (name n)})) ; :shape "circle"
-    :edge->descriptor (fn [i j]
-                        (if (contains? (:latents m) i)
-                          {:style "dotted"}
-                          {}))))
-
-
-
-;; Note that it's possible to seperate jupyter code from core
-;; TODO: importing acausal.jupyter should auto-pretty print models, queries, etc
-;; e.g. acausal.viz
-
-(comment
-
-(ns acausal.viz
-  (:require [acausal.core]
-    [clojupyter.protocol.mime-convertible :as mc]))
-
-(extend-protocol mc/PMimeConvertible
-  acausal.core.Latex
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (:s this) "$")})))
-                         
-)
+;;; TODO: temporarily put the (repl based) visualization functions here
+;;; TODO: create a jupyter namespace
+;;; TODO: create a 'live' namespace that can be (use '...) ed?
+;;; TODO: d-seperation algorithm
+;;; TODO: checkout the zID algorithm to see what kind of graph manipulations
+;;;       are needed
 
 
 ;;; examples
@@ -252,7 +130,4 @@
      :y [:z]
      :x []}
     [:w :y :z]))
-
-(defn latex [math-string]
-  (Latex. math-string))
 
