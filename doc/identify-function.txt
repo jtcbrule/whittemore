@@ -1,0 +1,54 @@
+
+# Default I is just P(v)
+
+(identify
+  M
+  Q
+  I ...)
+
+---
+
+I can prove my entire thesis with a single function implementation!
+
+Basically, need to implement zIDC (which doesn't exist yet, so I'm going to have to adopt zID and IDC, but hopefully that's not too hard). Implement plain IDC first.
+
+(identify G C Z Q) -> F
+
+V (implicit) is all the endogenous variables
+
+G is just the DAG over V
+
+C is a *confounding family* (very similar to a sperner family of V)
+
+Z is a set of available interventions (it is assumed that P(V) is available; Z={} makes this plain IDC)
+
+Q is a query (Y X Z W)
+
+---
+
+The full alphabet soup is:
+
+V (implicit, endogenous variables)
+
+M:
+    G (one set per v in V; acyclic)
+    C (confounding family of V)
+
+I:
+    Z (set)
+
+Q:
+    Y (effect vars)
+    X (causal vars)
+    W (observables)
+
+---
+
+If you want to put in causal discovery, we need to extend I to support conditional independencies, sets of:
+
+X _||_ Y | Z
+
+where X, Y and Z are sets.
+
+We're assume these are the *faithful* conditional independencies. If we want the causal sufficency assumption as well, we only search over Markovian graphs (i.e. C is empty)
+
