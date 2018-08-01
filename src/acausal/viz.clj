@@ -4,8 +4,6 @@
             [clojupyter.protocol.mime-convertible :as mc]))
 
 
-
-
 (extend-protocol mc/PMimeConvertible
   Formula
   (to-mime [this]
