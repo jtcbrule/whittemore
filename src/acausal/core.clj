@@ -1,117 +1,119 @@
-(ns acausal.core)
-  ;(:require [clojure.string]
-  ;          [clojupyter.protocol.mime-convertible :as mc]))
-
+(ns acausal.core
+  (:require [rhizome.viz]))
 
 (defn transpose
-  "Compute the transpose of directed graph g
-   Returns a map of nodes -> set of nodes (adjacency list representation)
-   TODO: make more efficient"
+  "Compute the transpose of directed graph g (adjacency list representation)
+   Returns map of nodes -> set of nodes"
   [g]
   (apply merge-with
          into
+         ; each key -> #{}
          (into {}
                (for [k (keys g)]
                  {k #{}}))
+         ; each val -> #{key}
          (for [k (keys g)
                v (get g k)]
            {v #{k}})))
 
 
+;; Models are stored as map of vars to set of parents
+;; TODO: consider alternative representations
+(defrecord Model [pa])
 
-;; TODO: consider restructuring; lots of redundant data here
-(defrecord Model [vars latents parents children])
+;; A Latent is a 'wrapper' around set of children to act as a latent node
+(defrecord Latent [ch])
 
+(defn latent?
+  "True iff node is a Latent node"
+  [node]
+  (= Latent (type node)))
+
+
+;; TODO: consider alternative representations; validate latents
+;; Consider doing full Verma-style latent projections, i.e. convert to only
+;; pairs of latent variables
 (defn model
-  "Construct a model
-   TODO: validate latents"
-  [m & more]
-  (let [vars (set (keys m))
-
-        latents (set (map set more))
-              
-
+  "Construct a model"
+  [dag & confounded]
+  (let [latents (map set confounded)
         children (apply merge-with
                         into
-                        (transpose m)
-                        (for [coll latents]
-                          {coll coll}))
-
+                        (transpose dag)
+                        (for [s latents]
+                          {(Latent. s) s}))
         parents (transpose children)]
+    (Model. parents)))
 
-    (Model. vars latents parents children)))
+
+(defn node->descriptor
+  "Graphviz options for node"
+  [n]
+  (if (latent? n)
+    {:label "", :shape "none", :width 0, :height 0}
+    {:label (if (keyword? n) (name n) (str n))}))
+   ; :shape "circle"
+
+
+(defn edge->descriptor
+  "Graphviz options for edge"
+  [i j]
+  (if (latent? i)
+    {:style "dotted"}
+    {}))
+
+
+(defn view-model
+  "View model m"
+  [m]
+  (let [children (transpose (:pa m))]
+    (rhizome.viz/view-graph
+      (keys children)
+      children
+      :vertical? false
+      :node->descriptor node->descriptor
+      :edge->descriptor edge->descriptor)))
+
+
+;; TODO: consider renaming
+(defrecord Data [vars surrogate])
+
+;; TODO: validate
+(defn data
+  "Construct a data object"
+  [v & {:keys [do*] :or {do* []}}]
+  (Data. (set v) (set do*)))
 
 
 ;; TODO: consider different field names
+;; TODO: consider supporting conditional queries, :given
+;; alias (q ..) to query?
 ;; Note that by convention: y is effect, x is do(), w is given
-
-(defrecord Query [effect do given])
+(defrecord Query [effect do])
 
 (defn query
   "Construct a query
   TODO validation, etc"
-  [effect & {:keys [do given] :or {do [] given []}}]
-  (Query. effect do given))
-
-;;(def q "Alias for query" query)
-
-;; TODO: rename this info or 'information set' to match causal programming?
-;; TODO: definitely rename the params
-;; v is the observables, z is the surrogate experiment set
-
-(defrecord Data [vars surrogate])
-
-(defn data
-  "Construct a data object"
-  [v & {:keys [do*] :or {do* []}}]
-  (Data. v do*))
-
-(data [:x :y] :do* [:z_1 :z_2])
+  [effect & {:keys [do] :or {do []}}]
+  (Query. (set effect) (set do)))
 
 
-;; TODO: this is broken; fix
-(defrecord Formula [s])
+;; TODO: determine structure of Formula
+;; name field(s)?
+(defrecord Formula [f])
 
-;; This should be an implementaion of zIDC
+
+;; This should be an implementaion of zID(C)
 (defn identify
-  "zIDC algorithm
-   By default, assume P(v) as information set"
-  ([m q]
-   (Formula.
-     (str
-       "P("
-       
-       (clojure.string/join ", " (map name (:effect q)))
-
-       " \\mid "
-
-       "do("
-       (clojure.string/join ", " (map name (:do q)))
-       ")"
-
-       (if (empty? (:given q))
-         ""
-         (str ", " (clojure.string/join ", " (map name (:given q)))))
-       
-       ")"
-       
-       " = "
-       
-       "\\sum_{z'} P(z' \\mid x) \\sum_{x'} P(y \\mid x', z) P(x') ")))
-
+  "zID(C) algorithm
+   By default, assume P(v) as data"
   ([m q d]
-   (identify m q)))
+   nil)
+  ([m q]
+   nil))
 
 
-;;; TODO: temporarily put the (repl based) visualization functions here
-;;; TODO: create a jupyter namespace
-;;; TODO: create a 'live' namespace that can be (use '...) ed?
-;;; TODO: d-seperation algorithm
-;;; TODO: checkout the zID algorithm to see what kind of graph manipulations
-;;;       are needed
-
-
-;;; examples
+;;; example models
 
 (def m1
   (model
