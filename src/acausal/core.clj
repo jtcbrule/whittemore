@@ -1,5 +1,7 @@
 (ns acausal.core
-  (:require [rhizome.viz]))
+  (:refer-clojure :exclude [ancestors parents])
+  (:require [rhizome.viz]
+            [clojure.set :refer [union subset?]]))
 
 (defn transpose
   "Compute the transpose of directed graph g (adjacency list representation)
@@ -27,12 +29,13 @@
 (defn latent?
   "True iff node is a Latent node"
   [node]
-  (= Latent (type node)))
+  (instance? Latent node))
 
 
 ;; TODO: consider alternative representations; validate latents
 ;; Consider doing full Verma-style latent projections, i.e. convert to only
 ;; pairs of latent variables
+;; alt: check all confounding sets for being subsets of another set
 (defn model
   "Construct a model"
   [dag & confounded]
@@ -76,6 +79,8 @@
 
 
 ;; TODO: consider renaming
+;; Needs :imap argument
+;; probably needs a way to define support of random variables
 (defrecord Data [vars surrogate])
 
 ;; TODO: validate
@@ -103,6 +108,29 @@
 (defrecord Formula [f])
 
 
+(defn parents
+  "Return the (non-latent) parents of the collection of nodes x in model g"
+  [g x]
+  (let [all-parents (apply union
+                           (for [node x]
+                             (get (:pa g) node)))]
+    (set (filter #(not (latent? %)) all-parents))))
+
+
+;; TODO: finish
+(defn ancestors
+  "Return (non-latent) ancestors of x in model g, inclusive
+  
+  x is a collection of nodes in g; g is a causal model"
+  [g x]
+  (loop [frontier (set x)
+         visited #{}]
+  (if (empty? frontier)
+    visited
+    (recur (parents g frontier)
+           (union visited frontier)))))
+
+
 ;; This should be an implementaion of zID(C)
 (defn identify
   "zID(C) algorithm
@@ -113,7 +141,9 @@
    nil))
 
 
+
 ;;; example models
+
 
 (def m1
   (model
