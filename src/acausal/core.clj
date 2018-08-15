@@ -1,7 +1,8 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
   (:require [rhizome.viz]
-            [clojure.set :refer [union subset?]]))
+            [clojure.set :refer [union subset? intersection difference]]))
+
 
 (defn transpose
   "Compute the transpose of directed graph g (adjacency list representation)
@@ -117,7 +118,6 @@
     (set (filter #(not (latent? %)) all-parents))))
 
 
-;; TODO: finish
 (defn ancestors
   "Return (non-latent) ancestors of x in model g, inclusive
   
@@ -130,6 +130,107 @@
     (recur (parents g frontier)
            (union visited frontier)))))
 
+
+(defn cut-latent
+  "Helper function; given latent node l and a set x, return a new latent
+   where children in x are absent. If this results in less than 2 children,
+   return nil"
+  [l x]
+  (let [new-children (difference (:ch l) x)]
+    (if (< (count new-children) 2)
+      nil
+      (Latent. new-children))))
+
+
+;;; Okay, we have a problem with the latents, what if we end up with singletons?
+
+(defn raw-cut
+  "Helper function; given a dag and set x, return a dag with every node in x
+   having no parents"
+  [dag x]
+  (into {}
+        (for [[k v] dag]
+          (if (contains? x k)
+            [k #{}]
+            [k v]))))
+
+
+;; BORK! If cut-latent returns nil, then don't include it?
+;; This definetly needs to be reviewed
+(defn fix-latents
+  "Helper function; given a dag in 'child' format, fix latents"
+  [dag x]
+  (into {}
+        (for [[k v] dag
+              :when (or
+                      (and (latent? k) (cut-latent k x))
+                      (not (latent? k)))]
+          (if (latent? k)
+            (let [new-k (cut-latent k x)]
+              [new-k (:ch new-k)])
+            [k v]))))
+
+
+
+;; TODO: write
+(defn cut-incoming
+  "G_{\\overline{x}}
+  
+  Return a model where all incoming edges to nodes x have been severed in g"
+  [m x]
+
+  (let [new-children (transpose (raw-cut (:pa m) x))
+        new-parents (transpose (fix-latents new-children x))]
+    (Model. new-parents)))
+
+
+(view-model (cut-incoming m1 #{:z}))
+
+(def tmp #{:z :y})
+
+
+(comment
+
+(for [[k v] (:pa m1)
+      :when (latent? k)]
+  k)
+
+
+(:pa m1)
+
+(transpose
+(into {}
+
+(for [[k v] (:pa m1)
+      :when (not (latent? k))]
+  (cond
+    (contains? tmp k) [k #{}]
+    :else [k v]))
+
+)
+)
+
+
+(transpose
+(into {}
+
+(for [[k v] (:pa m1)]
+  (cond
+    (contains? tmp k) [k #{}]
+    :else [k v]))
+
+)
+)
+
+
+
+
+
+)
+
+;; TODO: confounded components
+
+;; TODO: some kind of 'subgraph' funtion (graph, projected down to these vars?)
 
 ;; This should be an implementaion of zID(C)
 (defn identify
