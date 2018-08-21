@@ -21,7 +21,9 @@
 
 
 ;; Models are stored as map of vars to set of parents
-;; TODO: consider alternative representations
+;; TODO: consider alternative representations,
+;; specifically, consider not keeping latents in the parent sets of observable
+;; nodes. This is redundant information.
 (defrecord Model [pa])
 
 ;; A Latent is a 'wrapper' around set of children to act as a latent node
@@ -33,7 +35,7 @@
   (instance? Latent node))
 
 
-;; TODO: consider alternative representations; validate latents
+;; TODO: validate latents
 ;; Consider doing full Verma-style latent projections, i.e. convert to only
 ;; pairs of latent variables
 ;; alt: check all confounding sets for being subsets of another set
@@ -79,8 +81,7 @@
       :edge->descriptor edge->descriptor)))
 
 
-;; TODO: consider renaming
-;; Needs :imap argument
+;; TODO: Needs :imap argument
 ;; probably needs a way to define support of random variables
 (defrecord Data [vars surrogate])
 
@@ -98,8 +99,7 @@
 (defrecord Query [effect do])
 
 (defn query
-  "Construct a query
-  TODO validation, etc"
+  "Construct a query"
   [effect & {:keys [do] :or {do []}}]
   (Query. (set effect) (set do)))
 
@@ -142,8 +142,6 @@
       (Latent. new-children))))
 
 
-;;; Okay, we have a problem with the latents, what if we end up with singletons?
-
 (defn raw-cut
   "Helper function; given a dag and set x, return a dag with every node in x
    having no parents"
@@ -155,10 +153,11 @@
             [k v]))))
 
 
-;; BORK! If cut-latent returns nil, then don't include it?
-;; This definetly needs to be reviewed
+;; TODO: review
 (defn fix-latents
-  "Helper function; given a dag in 'child' format, fix latents"
+  "Helper function; given a dag in 'child' format, fix latents
+   Specifically, cut every latent with x, and remove those that have less than
+   two children, reassmble new dag in 'child' format"
   [dag x]
   (into {}
         (for [[k v] dag
@@ -171,8 +170,7 @@
             [k v]))))
 
 
-
-;; TODO: write
+;; TODO: review, test more thoroughly
 (defn cut-incoming
   "G_{\\overline{x}}
   
@@ -184,60 +182,69 @@
     (Model. new-parents)))
 
 
-(view-model (cut-incoming m1 #{:z}))
-
-(def tmp #{:z :y})
-
-
-(comment
-
-(for [[k v] (:pa m1)
-      :when (latent? k)]
-  k)
-
-
-(:pa m1)
-
-(transpose
-(into {}
-
-(for [[k v] (:pa m1)
-      :when (not (latent? k))]
-  (cond
-    (contains? tmp k) [k #{}]
-    :else [k v]))
-
-)
-)
+;; TODO: needs considerable cleanup, testing;
+;; should be a lot more efficient after restructuring the model design
+(defn subgraph
+  "G_{X}
+  
+   Return a model containing all verticies in (set) X and edges between those
+   verticies (including the bidirected/latents)"
+  [m x]
+  (let [nodes (into #{} (filter #(not (latent? %)) (keys (:pa m)))) ;; cleanup?
+        filtered-pa (into {} (filter #(contains? x (first %)) (:pa m)))
+        fixed-latents (fix-latents (transpose filtered-pa) (difference nodes x))
+        filtered-ch (into {} (filter #(or (latent? (first %))
+                                          (contains? x (first %)))
+                                     fixed-latents))]
+    (Model. (transpose filtered-ch))))
 
 
-(transpose
-(into {}
-
-(for [[k v] (:pa m1)]
-  (cond
-    (contains? tmp k) [k #{}]
-    :else [k v]))
-
-)
-)
+;; TODO: restructure Model to have :pa, :latent... call it :bi ?
+(defn latents
+  "Helper function, return set of latents of m"
+  [m]
+  (into #{}
+        (for [[k v] (:pa m)
+              :when (latent? k)]
+          (:ch k))))
 
 
+;; TODO: more testing, cleanup, make more efficient
+;; note that we redudantly add the searched node back to the visited set
+(defn connected-component
+  "Helper function... Assumes edges are set of set of multiedges, n is node"
+  [edges node]
+  (loop [frontier (list node)
+         visited #{}]
+    (if (empty? frontier)
+      visited
+      (let [current (peek frontier)]
+        (if (contains? visited current)
+          (recur (pop frontier) visited)
+          (let [adjacent-set (apply union (filter #(contains? % current) edges))]
+            (recur (into (pop frontier) adjacent-set) (conj visited current))))))))
 
 
+;; TODO: test more thoroughly, cleanup
+(defn c-components
+  "Return confounded components of m as set of sets of verticies"
+  [m]
+  (loop [nodes (into #{} (filter #(not (latent? %)) (keys (:pa m)))) ;; cleanup?
+         components #{}]
+    (if (empty? nodes)
+      components
+      (let [current-node (first nodes)
+            current-component (connected-component (latents m) current-node)]
+        (recur (difference nodes current-component)
+               (conj components current-component))))))
 
-)
 
-;; TODO: confounded components
-
-;; TODO: some kind of 'subgraph' funtion (graph, projected down to these vars?)
-
-;; This should be an implementaion of zID(C)
+;; TODO: Restructure; should be (or call) an implementation of zID(C?)
 (defn identify
   "zID(C) algorithm
    By default, assume P(v) as data"
   ([m q d]
-   nil)
+   (throw (Error. "Not implemented")))
   ([m q]
    nil))
 
@@ -263,4 +270,31 @@
      :y [:z]
      :x []}
     [:w :y :z]))
+
+
+(def m3
+  (model
+         {:x []
+          :z [:x]
+          :y [:z]}
+         #{:x :z :y}))
+
+(def m4
+  (model
+         {:v []
+          :w [:v]
+          :z [:w :x]
+          :y [:z]
+          :x []}
+         #{:w :z}
+         #{:z :y :x}))
+
+
+(comment
+
+(def example #{#{:a :b :c} #{:c :d} #{:g :h} #{:d :f} #{1 2} #{3 4} #{2 5} #{2 9} #{9 10 11}})
+(disj (apply union (filter #(contains? % 2) example)) 2)
+(connected-component example 1)
+
+)
 
