@@ -1,7 +1,9 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
   (:require [rhizome.viz]
-            [clojure.set :refer [union subset? intersection difference]]))
+            [clojure.set :refer [union subset? intersection difference]]
+            [clojure.string]
+            [clojupyter.protocol.mime-convertible :as mc]))
 
 
 (defn transpose
@@ -32,7 +34,7 @@
 (defn latent?
   "True iff node is a Latent node"
   [node]
-  (instance? Latent node))
+  (instance? acausal.core.Latent node))
 
 
 ;; TODO: validate latents
@@ -79,6 +81,19 @@
       :vertical? false
       :node->descriptor node->descriptor
       :edge->descriptor edge->descriptor)))
+
+
+(defn model->svg
+  "Render model m as svg graphic"
+  [m]
+   (let [children (transpose (:pa m))]
+     (rhizome.viz/graph->svg
+       (keys children)
+       children
+       :vertical? false
+       :node->descriptor node->descriptor
+       :edge->descriptor edge->descriptor)))
+
 
 
 ;; TODO: Needs :imap argument
@@ -239,8 +254,79 @@
                (conj components current-component))))))
 
 
+;;; TODO: cleanup/restructure
+(defn node->latex
+  [n]
+  (if (keyword? n)
+    (name n)
+    (str n)))
+
+
+;; TODO: cleanup/restucture
+(defn marginalize
+  [p sub]
+  (conj p
+        (str "\\sum_{"
+               (clojure.string/join "," (map node->latex sub))
+               "}"
+               " "
+               "P(v)")))
+
+
+;; TODO: considerable work
+(defn id
+  "y set
+   x set
+   p ??? vector, for now
+   g model"
+  [y x p g]
+  (let [v (into #{} (filter #(not (latent? %)) (keys (:pa g))))]
+    (cond
+      ;; line 1
+      (empty? x)
+      (marginalize p (difference v y))
+
+      ;; line 2
+      (not (empty? (difference v (ancestors g y))))
+      (id y
+          (intersection x (ancestors g y))
+          (marginalize p (difference v (ancestors g y)))
+          (subgraph g (ancestors g y)))
+
+      ;; line 3
+      :else
+      (let [w (difference (difference v x) (ancestors (cut-incoming g x) y))]
+        (if (not (empty? w))
+          (id y (union x w) p g)
+          
+          ;;else TODO: finish (line 4)
+          (throw (Error. "Not implemented")))))))
+
+
+;;; TODO: left off here
+
+(def kidney
+  (model 
+    {:recovery [:treatment :size]
+     :size []
+     :treatment [:size]}))
+
+(difference (difference v x) (ancestors (cut-incoming g x) y))
+
+(comment
+
+(difference #{:recovery :size :treatment} #{:treatment})
+
+(cut-incoming kidney #{:treatment})
+
+(ancestors (cut-incoming kidney #{:treatment}) #{:recovery})
+
+(id #{:recovery} #{:treatment} [] kidney)
+
+)
+
 ;; TODO: Restructure; should be (or call) an implementation of zID(C?)
-(defn identify
+(defn identify-template
   "zID(C) algorithm
    By default, assume P(v) as data"
   ([m q d]
@@ -249,6 +335,23 @@
    nil))
 
 
+;;; Jupyter integration (TODO: seperate this out later?)
+
+(extend-protocol mc/PMimeConvertible
+  Model
+  (to-mime [this]
+    (mc/stream-to-string
+      {:image/svg+xml (model->svg this)})))
+
+(comment
+
+(extend-protocol mc/PMimeConvertible
+  Formula
+  (to-mime [this]
+    (mc/stream-to-string
+      {:text/latex (str "$" (:s this) "$")})))
+
+)
 
 ;;; example models
 
