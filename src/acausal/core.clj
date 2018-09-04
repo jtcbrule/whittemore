@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [ancestors parents])
   (:require [rhizome.viz]
             [clojure.set :refer [union subset? intersection difference]]
-            [clojure.string]
+            [clojure.string :as string]
             [clojupyter.protocol.mime-convertible :as mc]))
 
 
@@ -145,6 +145,11 @@
     (recur (parents g frontier)
            (union visited frontier)))))
 
+(defn verticies
+  "Return verticies of model m as a set"
+  [m]
+  (into #{} (filter #(not (latent? %)) (keys (:pa m)))))
+
 
 (defn cut-latent
   "Helper function; given latent node l and a set x, return a new latent
@@ -157,6 +162,7 @@
       (Latent. new-children))))
 
 
+;; TODO: make more efficient
 (defn raw-cut
   "Helper function; given a dag and set x, return a dag with every node in x
    having no parents"
@@ -202,8 +208,8 @@
 (defn subgraph
   "G_{X}
   
-   Return a model containing all verticies in (set) X and edges between those
-   verticies (including the bidirected/latents)"
+  Return a model containing all verticies in (set) X and edges between those
+  verticies (including the bidirected/latents)"
   [m x]
   (let [nodes (into #{} (filter #(not (latent? %)) (keys (:pa m)))) ;; cleanup?
         filtered-pa (into {} (filter #(contains? x (first %)) (:pa m)))
@@ -224,7 +230,7 @@
           (:ch k))))
 
 
-;; TODO: more testing, cleanup, make more efficient
+;; TODO: more testing, cleanup, make more efficient; rename?
 ;; note that we redudantly add the searched node back to the visited set
 (defn connected-component
   "Helper function... Assumes edges are set of set of multiedges, n is node"
@@ -264,20 +270,43 @@
 
 ;; TODO: cleanup/restucture
 (defn marginalize
+  "Temporary representation of \\sum_{sub} p"
   [p sub]
   (conj p
         (str "\\sum_{"
-               (clojure.string/join "," (map node->latex sub))
-               "}"
-               " "
-               "P(v)")))
+               (string/join "," (map node->latex sub))
+               "}")))
+
+
+;; TODO: cleanup/restucture
+(defn product
+  "Temporary representation of \\sum_{sub} p"
+  [p exprs]
+  (conj p
+        exprs
+        (str "\\prod_{i}")))
+
+
+; TODO: write/design
+(defn topological-sort
+  "???"
+  []
+  nil)
+
+
+;; helper function
+(defn find-superset
+  "Given a collection of sets, return a set that is a superset of s,
+  or nil if no such superset exists"
+  [coll s]
+  (first (filter #(subset? s %) coll)))
 
 
 ;; TODO: considerable work
 (defn id
   "y set
    x set
-   p ??? vector, for now
+   p ??? vector, for now (initially call with ['P(v)']?)
    g model"
   [y x p g]
   (let [v (into #{} (filter #(not (latent? %)) (keys (:pa g))))]
@@ -299,11 +328,35 @@
         (if (not (empty? w))
           (id y (union x w) p g)
           
-          ;;else TODO: finish (line 4)
-          (throw (Error. "Not implemented")))))))
+          ;; line 4
+          (let [cg-x (c-components (subgraph g (difference v x)))]
+            (if (> (count cg-x) 1)
+              (marginalize (product p
+                                    (vec
+                                      (for [si cg-x]
+                                        (id si
+                                            (difference v si)
+                                            p
+                                            g))))
+                           (difference v (union y x)))
 
+              ;; line 5 (cgx should be singleton)
+              (let [s (first cg-x)
+                    cg (c-components g)]
+                (if (= (first cg) (verticies g))
+                  ["fail" g cg-x] ;; restructure?
 
-;;; TODO: left off here
+                  ;; line 6
+                  (if (contains? cg s)
+                    (marginalize (product p
+                                          ["P(v_i \\mid v_pi)"] ;; fix!
+                                 (difference s y)))
+
+                    ;; line 7; TODO: LEFT OFF HERE
+
+  
+              (throw (Error. "Should be unreachable")))))))))))
+
 
 (def kidney
   (model 
@@ -311,9 +364,11 @@
      :size []
      :treatment [:size]}))
 
-(difference (difference v x) (ancestors (cut-incoming g x) y))
 
 (comment
+
+
+(view-model m2)
 
 (difference #{:recovery :size :treatment} #{:treatment})
 
@@ -322,6 +377,8 @@
 (ancestors (cut-incoming kidney #{:treatment}) #{:recovery})
 
 (id #{:recovery} #{:treatment} [] kidney)
+
+(id #{:recovery} #{} [] kidney)
 
 )
 
@@ -396,8 +453,12 @@
 (comment
 
 (def example #{#{:a :b :c} #{:c :d} #{:g :h} #{:d :f} #{1 2} #{3 4} #{2 5} #{2 9} #{9 10 11}})
+
 (disj (apply union (filter #(contains? % 2) example)) 2)
+
 (connected-component example 1)
+
+(c-components m1)
 
 )
 
