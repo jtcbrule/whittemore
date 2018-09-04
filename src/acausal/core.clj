@@ -349,13 +349,21 @@
                   ;; line 6
                   (if (contains? cg s)
                     (marginalize (product p
-                                          ["P(v_i \\mid v_pi)"] ;; fix!
-                                 (difference s y)))
+                                          ["P(v_i \\mid v_pi)"]) ;; fix!
+                                 (difference s y))
 
-                    ;; line 7; TODO: LEFT OFF HERE
+                    ;; line 7;
+                    (if-let [s-prime (find-superset cg s)]
+                      (id y
+                          (intersection x s-prime)
+                          (conj p "new P=P(v \\mid ...)")
+                          (subgraph g s-prime))
+
+                      ;; fall-through
+                      (throw (Error. "Should be unreachable")))))))))))))
+                      
 
   
-              (throw (Error. "Should be unreachable")))))))))))
 
 
 (def kidney
@@ -363,6 +371,9 @@
     {:recovery [:treatment :size]
      :size []
      :treatment [:size]}))
+
+
+
 
 
 (comment
@@ -376,7 +387,7 @@
 
 (ancestors (cut-incoming kidney #{:treatment}) #{:recovery})
 
-(id #{:recovery} #{:treatment} [] kidney)
+(id #{:recovery} #{:treatment} ["P(v)"] kidney)
 
 (id #{:recovery} #{} [] kidney)
 

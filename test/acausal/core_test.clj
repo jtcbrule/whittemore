@@ -30,30 +30,7 @@
      :y [:z]
      :x []}
     
-    [:x :y]
-    [:w :z]))
+    #{:x :y}
+    #{:w :z}))
 
-
-(deftest model-test
-    (is (= (:vars m)
-           #{:w :x :y :z}))
-
-    (is (= (:latents m)
-        #{#{:x :y} #{:w :z}}))
-
-    (is (= (:parents m)
-           {:w #{#{:w :z}}
-            :x #{#{:x :y}}
-            :y #{:z #{:x :y}}
-            :z #{:w :x #{:w :z}}
-            #{:w :z} #{}
-            #{:x :y} #{}}))
-
-    (is (= (:children m)
-           {:w #{:z}
-            :x #{:z}
-            :y #{}
-            :z #{:y}
-            #{:w :z} #{:w :z}
-            #{:x :y} #{:x :y}})))
 
