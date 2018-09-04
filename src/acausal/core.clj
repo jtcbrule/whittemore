@@ -420,7 +420,17 @@
 (id #{:y} #{:x} [] identifiable-e)
 (id #{:y} #{:x} [] identifiable-f)
 
+(id #{:y} #{:x} [] non-c)
+
 )
+
+(def non-c
+  (model
+    {:x []
+     :z [:x]
+     :y [:z]}
+    #{:x :z}))
+
 
 (comment
 
