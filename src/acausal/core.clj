@@ -373,8 +373,54 @@
      :treatment [:size]}))
 
 
+(def identifiable-a
+  (model
+    {:y [:x]
+     :x []}))
 
 
+(def identifiable-b
+  (model
+    {:x []
+     :y [:x :z]
+     :z [:x]}
+    #{:z :y}))
+     
+
+(def identifiable-c
+  (model
+    {:x [:z]
+     :y [:x :z]
+     :z []}
+    #{:z :y}))
+     
+
+(def identifiable-d
+  (model
+    {:x [:z]
+     :y [:x :z]
+     :z []}
+    #{:x :z}))
+
+
+(def identifiable-e
+  (model
+    {:x []
+     :y [:z]
+     :z [:x]}
+    #{:x :y}))
+
+
+(comment 
+
+(id #{:y} #{:x} [] identifiable-a)
+(id #{:y} #{:x} [] identifiable-b)
+(id #{:y} #{:x} [] identifiable-c)
+(id #{:y} #{:x} [] identifiable-d)
+(id #{:y} #{:x} [] identifiable-e)
+(id #{:y} #{:x} [] identifiable-f)
+
+)
 
 (comment
 
