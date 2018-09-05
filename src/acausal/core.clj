@@ -365,7 +365,6 @@
 
   
 
-
 (def kidney
   (model 
     {:recovery [:treatment :size]
@@ -410,6 +409,27 @@
      :z [:x]}
     #{:x :y}))
 
+(def identifiable-f
+  (model
+    {:x []
+     :z1 [:x]
+     :z2 [:z1]
+     :y [:x :z1 :z2]}
+    #{:x :z2}
+    #{:z1 :y}))
+
+(def identifiable-g
+  (model
+    {:x [:z2]
+     :z1 [:x :z2]
+     :z2 []
+     :z3 [:z2]
+     :y [:z1 :z3]}
+    #{:x :z2}
+    #{:x :z3}
+    #{:x :y}
+    #{:y :z2}))
+
 
 (comment 
 
@@ -419,10 +439,23 @@
 (id #{:y} #{:x} [] identifiable-d)
 (id #{:y} #{:x} [] identifiable-e)
 (id #{:y} #{:x} [] identifiable-f)
-
-(id #{:y} #{:x} [] non-c)
+(id #{:y} #{:x} [] identifiable-g)
 
 )
+
+
+(def non-a
+  (model
+    {:x []
+     :y [:x]}
+    #{:x :y}))
+
+(def non-b
+  (model
+    {:x []
+     :z [:x]
+     :y [:z]}
+    #{:x :z}))
 
 (def non-c
   (model
@@ -431,9 +464,64 @@
      :y [:z]}
     #{:x :z}))
 
+(def non-d
+  (model
+    {:x []
+     :y [:x :z]
+     :z []}
+    #{:x :z}
+    #{:z :y}))
+
+(def non-e
+  (model
+    {:x [:z]
+     :y [:x]
+     :z []}
+    #{:x :z}
+    #{:z :y}))
+
+(def non-f
+  (model
+    {:x []
+     :z [:x]
+     :y [:z]}
+    #{:x :y}
+    #{:z :y}))
+
+(def non-g
+  (model
+    {:x []
+     :z1 [:x]
+     :z2 []
+     :y [:z1 :z2]}
+    #{:x :z2}
+    #{:z1 :z2}))
+
+(def non-h
+  (model
+    {:x [:z]
+     :z []
+     :w [:x]
+     :y [:w]}
+    #{:x :z}
+    #{:x :y}
+    #{:z :y}
+    #{:z :w}))
 
 (comment
 
+(id #{:y} #{:x} [] non-a)
+(id #{:y} #{:x} [] non-b)
+(id #{:y} #{:x} [] non-c)
+(id #{:y} #{:x} [] non-d)
+(id #{:y} #{:x} [] non-e)
+(id #{:y} #{:x} [] non-f)
+(id #{:y} #{:x} [] non-g)
+(id #{:y} #{:x} [] non-h)
+
+)
+
+(comment
 
 (view-model m2)
 
