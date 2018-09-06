@@ -6,9 +6,10 @@
             [clojupyter.protocol.mime-convertible :as mc]))
 
 
+;; TODO: test more thoroughly
 (defn transpose
-  "Compute the transpose of directed graph g (adjacency list representation)
-   Returns map of nodes -> set of nodes"
+  "Returns the transpose of directed graph g (adjacency list representation)
+  Returns map of nodes -> set of nodes"
   [g]
   (apply merge-with
          into
@@ -22,13 +23,24 @@
            {v #{k}})))
 
 
-;; Models are stored as map of vars to set of parents
-;; TODO: consider alternative representations,
-;; specifically, consider not keeping latents in the parent sets of observable
-;; nodes. This is redundant information.
-(defrecord Model [pa])
+;; Models are are stored as map of vars to set of parents, `pa`
+;; and set of pairs (sets), `bi`
+(defrecord Model [pa bi])
 
-;; A Latent is a 'wrapper' around set of children to act as a latent node
+
+;; TODO: validate confounded
+;; TODO: full Verma-style latent projections, i.e. convert to only pairs
+;; TODO: rename args
+(defn model
+  "Construct a model"
+  [dag & confounded]
+  (let [bi (set (map set confounded))
+        pa (into {} (for [[k v] dag] [k (set v)]))]
+    (Model. pa bi)))
+
+
+;; TODO: refactor
+;; Currently, a hack for the rhizome visualization
 (defrecord Latent [ch])
 
 (defn latent?
@@ -37,23 +49,9 @@
   (instance? acausal.core.Latent node))
 
 
-;; TODO: validate latents
-;; Consider doing full Verma-style latent projections, i.e. convert to only
-;; pairs of latent variables
-;; alt: check all confounding sets for being subsets of another set
-(defn model
-  "Construct a model"
-  [dag & confounded]
-  (let [latents (map set confounded)
-        children (apply merge-with
-                        into
-                        (transpose dag)
-                        (for [s latents]
-                          {(Latent. s) s}))
-        parents (transpose children)]
-    (Model. parents)))
 
 
+;; TODO: refactor (see view-model)
 (defn node->descriptor
   "Graphviz options for node"
   [n]
@@ -63,6 +61,7 @@
    ; :shape "circle"
 
 
+;; TODO: refactor (see view-model)
 (defn edge->descriptor
   "Graphviz options for edge"
   [i j]
@@ -71,34 +70,48 @@
     {}))
 
 
+
+;; TODO: refactor
+(defn rhizome-graph
+  "Returns a 'rhizome graph', given model m"
+  [m]
+  (into (transpose (:pa m))
+        (for [multiedge (:bi m)]
+          {(Latent. multiedge) multiedge})))
+
+(def rhizome-options
+  [:vertical? false
+   :node->descriptor node->descriptor
+   :edge->descriptor edge->descriptor])
+
+;; TODO: refactor
+;; currently a hack, since rhizome doesn't support a clean way to draw
+;; multiedges; may switch to Dorothy or Tangle
 (defn view-model
   "View model m"
   [m]
-  (let [children (transpose (:pa m))]
-    (rhizome.viz/view-graph
-      (keys children)
-      children
-      :vertical? false
-      :node->descriptor node->descriptor
-      :edge->descriptor edge->descriptor)))
+  (let [children (rhizome-graph m)]
+    (apply rhizome.viz/view-graph
+           (keys children)
+           children
+           rhizome-options)))
 
 
 (defn model->svg
   "Render model m as svg graphic"
   [m]
-   (let [children (transpose (:pa m))]
-     (rhizome.viz/graph->svg
-       (keys children)
-       children
-       :vertical? false
-       :node->descriptor node->descriptor
-       :edge->descriptor edge->descriptor)))
+  (let [children (rhizome-graph m)]
+    (apply rhizome.viz/graph->svg
+           (keys children)
+           children
+           rhizome-options)))
 
 
 
 ;; TODO: Needs :imap argument
 ;; probably needs a way to define support of random variables
 (defrecord Data [vars surrogate])
+
 
 ;; TODO: validate
 (defn data
@@ -124,13 +137,15 @@
 (defrecord Formula [f])
 
 
+;;; TODO: POINT OF MASSIVE REFACTOR
+
 (defn parents
   "Return the (non-latent) parents of the collection of nodes x in model g"
   [g x]
   (let [all-parents (apply union
                            (for [node x]
                              (get (:pa g) node)))]
-    (set (filter #(not (latent? %)) all-parents))))
+    (set (filter #(not (latent? %)) all-parents)))) ;; TODO: remove
 
 
 (defn ancestors
@@ -191,7 +206,7 @@
             [k v]))))
 
 
-;; TODO: review, test more thoroughly
+;; TODO: review, test more thoroughly BORK
 (defn cut-incoming
   "G_{\\overline{x}}
   
@@ -200,10 +215,10 @@
 
   (let [new-children (transpose (raw-cut (:pa m) x))
         new-parents (transpose (fix-latents new-children x))]
-    (Model. new-parents)))
+    (Model. new-parents nil)))
 
 
-;; TODO: needs considerable cleanup, testing;
+;; TODO: needs considerable cleanup, testing; BORK
 ;; should be a lot more efficient after restructuring the model design
 (defn subgraph
   "G_{X}
@@ -217,7 +232,7 @@
         filtered-ch (into {} (filter #(or (latent? (first %))
                                           (contains? x (first %)))
                                      fixed-latents))]
-    (Model. (transpose filtered-ch))))
+    (Model. (transpose filtered-ch) nil)))
 
 
 ;; TODO: restructure Model to have :pa, :latent... call it :bi ?
