@@ -13,28 +13,39 @@
   [g]
   (apply merge-with
          into
-         ; each key -> #{}
+
+         ; key -> #{}
          (into {}
                (for [k (keys g)]
                  {k #{}}))
-         ; each val -> #{key}
+
+         ; val -> #{key}
          (for [k (keys g)
                v (get g k)]
            {v #{k}})))
+
+
+;; TODO: make more efficient
+(defn pairs-of
+  "Returns all pairs of items in coll as set of sets."
+  [coll]
+  (set
+    (for [i coll
+          j coll
+          :when (not= i j)]
+      #{i j})))
 
 
 ;; Models are are stored as map of vars to set of parents, `pa`
 ;; and set of pairs (sets), `bi`
 (defrecord Model [pa bi])
 
-
-;; TODO: validate confounded
-;; TODO: full Verma-style latent projections, i.e. convert to only pairs
-;; TODO: rename args
+;; TODO: rename args?
+;; TODO: validate no cycles; confounded are members of set
 (defn model
   "Construct a model"
   [dag & confounded]
-  (let [bi (set (map set confounded))
+  (let [bi (apply union (map pairs-of confounded))
         pa (into {} (for [[k v] dag] [k (set v)]))]
     (Model. pa bi)))
 
@@ -47,8 +58,6 @@
   "True iff node is a Latent node"
   [node]
   (instance? acausal.core.Latent node))
-
-
 
 
 ;; TODO: refactor (see view-model)
@@ -66,9 +75,8 @@
   "Graphviz options for edge"
   [i j]
   (if (latent? i)
-    {:style "dotted"}
+    {:style "dotted" :arrowhead "empty"} ; :constraint "false"
     {}))
-
 
 
 ;; TODO: refactor
@@ -83,6 +91,7 @@
   [:vertical? false
    :node->descriptor node->descriptor
    :edge->descriptor edge->descriptor])
+
 
 ;; TODO: refactor
 ;; currently a hack, since rhizome doesn't support a clean way to draw
@@ -105,7 +114,6 @@
            (keys children)
            children
            rhizome-options)))
-
 
 
 ;; TODO: Needs :imap argument
@@ -137,105 +145,81 @@
 (defrecord Formula [f])
 
 
-;;; TODO: POINT OF MASSIVE REFACTOR
-
 (defn parents
-  "Return the (non-latent) parents of the collection of nodes x in model g"
-  [g x]
-  (let [all-parents (apply union
-                           (for [node x]
-                             (get (:pa g) node)))]
-    (set (filter #(not (latent? %)) all-parents)))) ;; TODO: remove
+  "Pa(x)_m
+  Returns the parents of the (collection of) nodes x in model m."
+  [m x]
+  (apply union
+         (for [node x]
+           (get (:pa m) node))))
 
 
 (defn ancestors
-  "Return (non-latent) ancestors of x in model g, inclusive
-  
-  x is a collection of nodes in g; g is a causal model"
-  [g x]
+  "An(x)_m
+  Returns the ancestors of the (collection of) nodes x in model m, inclusive."
+  [m x]
   (loop [frontier (set x)
          visited #{}]
   (if (empty? frontier)
     visited
-    (recur (parents g frontier)
+    (recur (parents m frontier)
            (union visited frontier)))))
 
+
 (defn verticies
-  "Return verticies of model m as a set"
+  "Returns the verticies of model m as a set."
   [m]
-  (into #{} (filter #(not (latent? %)) (keys (:pa m)))))
+  (set (keys (:pa m))))
 
 
-(defn cut-latent
-  "Helper function; given latent node l and a set x, return a new latent
-   where children in x are absent. If this results in less than 2 children,
-   return nil"
-  [l x]
-  (let [new-children (difference (:ch l) x)]
-    (if (< (count new-children) 2)
-      nil
-      (Latent. new-children))))
+;; Efficient?
+(defn graph-cut
+  "Given a graph (adjacency list) g and set x, return g with all keys in x
+  mapping to #{}."
+  [g x]
+  (let [new-kv (for [k x] [k #{}])]
+    (into g new-kv)))
 
 
-;; TODO: make more efficient
-(defn raw-cut
-  "Helper function; given a dag and set x, return a dag with every node in x
-   having no parents"
-  [dag x]
-  (into {}
-        (for [[k v] dag]
-          (if (contains? x k)
-            [k #{}]
-            [k v]))))
+;; hack?
+;; TODO: can probably improve with transients
+;; see: https://clojuredocs.org/clojure.core/disj%21
+(defn pair-cut
+  "Given a set of pairs (sets), return a set of pairs where all pairs that
+  contain an item in x have been removed."
+  [pairs x]
+  (let [to-remove (filter #(or (contains? x (first %))
+                               (contains? x (second %)))
+                          pairs)]
+    (apply disj pairs to-remove)))
 
 
-;; TODO: review
-(defn fix-latents
-  "Helper function; given a dag in 'child' format, fix latents
-   Specifically, cut every latent with x, and remove those that have less than
-   two children, reassmble new dag in 'child' format"
-  [dag x]
-  (into {}
-        (for [[k v] dag
-              :when (or
-                      (and (latent? k) (cut-latent k x))
-                      (not (latent? k)))]
-          (if (latent? k)
-            (let [new-k (cut-latent k x)]
-              [new-k (:ch new-k)])
-            [k v]))))
-
-
-;; TODO: review, test more thoroughly BORK
+;; TODO: test more thoroughly
 (defn cut-incoming
   "G_{\\overline{x}}
-  
-  Return a model where all incoming edges to nodes x have been severed in g"
+  Returns a model where all incoming edges to nodes in x have been severed in g"
   [m x]
+  (let [pa (graph-cut (:pa m) x)
+        bi (pair-cut (:bi m) x)]
+    (Model. pa bi)))
 
-  (let [new-children (transpose (raw-cut (:pa m) x))
-        new-parents (transpose (fix-latents new-children x))]
-    (Model. new-parents nil)))
 
-
-;; TODO: needs considerable cleanup, testing; BORK
-;; should be a lot more efficient after restructuring the model design
+;; may be inefficient
 (defn subgraph
   "G_{X}
-  
-  Return a model containing all verticies in (set) X and edges between those
-  verticies (including the bidirected/latents)"
+  Returns a model containing all verticies in (set) x and edges between those
+  verticies, including the bidirected edges"
   [m x]
-  (let [nodes (into #{} (filter #(not (latent? %)) (keys (:pa m)))) ;; cleanup?
-        filtered-pa (into {} (filter #(contains? x (first %)) (:pa m)))
-        fixed-latents (fix-latents (transpose filtered-pa) (difference nodes x))
-        filtered-ch (into {} (filter #(or (latent? (first %))
-                                          (contains? x (first %)))
-                                     fixed-latents))]
-    (Model. (transpose filtered-ch) nil)))
+  (let [to-remove (difference (verticies m) x)
+        bi (pair-cut (:bi m) to-remove)
+        pa (into {}
+                 (for [[k v] (:pa m)
+                       :when (contains? x k)]
+                   [k (intersection v x)]))]
+    (Model. pa bi)))
 
 
-;; TODO: restructure Model to have :pa, :latent... call it :bi ?
+;; TODO: remove?
 (defn latents
   "Helper function, return set of latents of m"
   [m]
@@ -245,34 +229,45 @@
           (:ch k))))
 
 
-;; TODO: more testing, cleanup, make more efficient; rename?
-;; note that we redudantly add the searched node back to the visited set
+;; efficient?
+(defn adjacent
+  "Helper function..."
+  [pairs node]
+  (disj (apply union
+               (filter #(contains? % node) pairs))
+        node))
+
+
+;; efficient? rename?
 (defn connected-component
   "Helper function... Assumes edges are set of set of multiedges, n is node"
-  [edges node]
+  [pairs node]
   (loop [frontier (list node)
          visited #{}]
     (if (empty? frontier)
       visited
       (let [current (peek frontier)]
         (if (contains? visited current)
-          (recur (pop frontier) visited)
-          (let [adjacent-set (apply union (filter #(contains? % current) edges))]
-            (recur (into (pop frontier) adjacent-set) (conj visited current))))))))
+          (recur (pop frontier)
+                 visited)
+        ;else    
+          (recur (into (pop frontier) (adjacent pairs current))
+                 (conj visited current)))))))
 
 
 ;; TODO: test more thoroughly, cleanup
 (defn c-components
-  "Return confounded components of m as set of sets of verticies"
+  "Returns the confounded components of m as set of sets of verticies."
   [m]
-  (loop [nodes (into #{} (filter #(not (latent? %)) (keys (:pa m)))) ;; cleanup?
+  (loop [nodes (verticies m)
          components #{}]
     (if (empty? nodes)
       components
       (let [current-node (first nodes)
-            current-component (connected-component (latents m) current-node)]
+            current-component (connected-component (:bi m) current-node)]
         (recur (difference nodes current-component)
                (conj components current-component))))))
+
 
 
 ;;; TODO: cleanup/restructure
