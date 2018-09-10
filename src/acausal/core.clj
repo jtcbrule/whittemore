@@ -3,7 +3,8 @@
   (:require [rhizome.viz]
             [clojure.set :refer [union subset? intersection difference]]
             [clojure.string :as string]
-            [clojupyter.protocol.mime-convertible :as mc]))
+            [clojupyter.protocol.mime-convertible :as mc]
+            [clojure.pprint :as p]))
 
 
 ;; TODO: test more thoroughly
@@ -338,14 +339,20 @@
   "\\sum_{sub} p
    p is the current distribution; sub is a set of vars"
   [p sub]
-  {:sub sub :sum p})
+  (if (empty? sub)
+    p
+    {:sub sub :sum p}))
 
 
 ;; TODO: cleanup/restucture
 (defn product
-  "Temporary representation of \\sum_{sub} p"
-  [exprs]
-  {:prod (set exprs)})
+  "Temporary representation of \\sum_{sub} p
+  coll - collection of probability expressions"
+  [coll]
+  (let [exprs (set coll)]
+    (if (= (count exprs) 1)
+      (first exprs)
+      {:prod exprs})))
 
 
 ;; TODO: zID;
@@ -353,7 +360,7 @@
 (defn id
   "y set
    x set
-   p formula type; for now, initially call with '([:p #{vars}])
+   p formula type; for now, initially call with {:p #{vars}}
    g model"
   [y x p g]
   (let [v (verticies g)]
@@ -367,7 +374,7 @@
       (id y
           (intersection x (ancestors g y))
           {:p (ancestors g y)
-           :recur (marginalize p (difference v (ancestors g y)))}
+           :where (marginalize p (difference v (ancestors g y)))}
           (subgraph g (ancestors g y)))
 
       ;; line 3
@@ -400,10 +407,10 @@
                       (marginalize
                         (product
                           (for [vi s]
-                            (if (:recur p)
-                              {:recur (:recur p)
-                               :p #{vi} :given (predecessors pi x)}
-                              {:p #{vi} :given (predecessors pi x)})))
+                            (if (:where p)
+                              {:where (:where p)
+                               :p #{vi} :given (predecessors pi vi)}
+                              {:p #{vi} :given (predecessors pi vi)})))
                         (difference s y)))
 
                     ;; line 7;
@@ -411,15 +418,15 @@
                       (let [pi (topological-sort g)
                             p-prime (product 
                                       (for [vi s]
-                                        (if (:recur p)
-                                          {:recur (:recur p)
+                                        (if (:where p)
+                                          {:where (:where p)
                                            :p #{vi}
-                                           :given (predecessors pi x)}
+                                           :given (predecessors pi vi)}
                                           {:p #{vi}
-                                           :given (predecessors pi x)})))]
+                                           :given (predecessors pi vi)})))]
                         (id y
                             (intersection x s-prime)
-                            {:p s-prime :recur p-prime}
+                            {:p s-prime :where p-prime}
                             (subgraph g s-prime)))
 
                       ;; fall-through
@@ -432,7 +439,7 @@
    By default, assume P(v) as data [m q d]; [m q]"
   [y x m]
   (let [p {:p (verticies m)}]
-        (id y x p m)))
+    (id y x p m)))
 
 
 (def hedge-less
@@ -514,6 +521,13 @@
     #{:y :z2}))
 
 
+(def blood-pressure
+  (model 
+    {:recovery [:blood-pressure :treatment]
+     :blood-pressure [:treatment]
+     :treatment []}))
+
+
 (comment 
 
 (identify #{:y} #{:x} identifiable-a)
@@ -524,7 +538,11 @@
 (identify #{:y} #{:x} identifiable-f)
 (identify #{:y} #{:x} identifiable-g)
 
-(identify #{:y_1 :y_2} #{:x} hedge-less)
+(p/pprint (identify #{:y_1 :y_2} #{:x} hedge-less))
+
+(p/pprint (identify #{:recovery} #{:treatment} kidney))
+
+(p/pprint (identify #{:recovery} #{:treatment} blood-pressure))
 
 )
 
