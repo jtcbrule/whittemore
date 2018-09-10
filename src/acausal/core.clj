@@ -298,10 +298,11 @@
 ;; TODO: test more thoroughly; restructure?
 ;; Should be able to take advantage of d-seperation structure (Tikka paper),
 ;; but can save that problem for later
+;; ?? is a vector the right type for result?
 (defn topological-sort
-  "Given a dag g, return a topological sort"
-  [g]
-  (loop [remaining g
+  "Given a model m, return a topological sort"
+  [m]
+  (loop [remaining (:pa m)
          result (empty [])]
     (if (empty? remaining)
       result
@@ -311,6 +312,12 @@
           (recur (kahn-cut remaining frontier)
                  (into result frontier)))))))
 
+
+;; WARN: will return entire ordering if v not in ordering
+(defn predecessors
+  "Set of nodes preceding v in topological ordering"
+  [ordering v]
+  (set (take-while #(not= % v) ordering)))
 
 
 ;; TODO: determine structure of Formula
@@ -328,22 +335,17 @@
 
 ;; TODO: cleanup/restucture
 (defn marginalize
-  "Temporary representation of \\sum_{sub} p"
+  "\\sum_{sub} p
+   p is the current distribution; sub is a set of vars"
   [p sub]
-  (conj p
-        (str "\\sum_{"
-               (string/join "," (map node->latex sub))
-               "}")))
+  {:sub sub :sum p})
 
 
 ;; TODO: cleanup/restucture
 (defn product
   "Temporary representation of \\sum_{sub} p"
-  [p exprs]
-  (conj p
-        exprs
-        (str "\\prod_{i}")))
-
+  [exprs]
+  {:prod (set exprs)})
 
 
 ;; TODO: zID;
@@ -351,20 +353,21 @@
 (defn id
   "y set
    x set
-   p ??? vector, for now (initially call with ['P(v)']?)
+   p formula type; for now, initially call with '([:p #{vars}])
    g model"
   [y x p g]
-  (let [v (into #{} (filter #(not (latent? %)) (keys (:pa g))))]
+  (let [v (verticies g)]
     (cond
       ;; line 1
       (empty? x)
       (marginalize p (difference v y))
 
-      ;; line 2
+      ;; line 2, refactor? (don't need the recur?)
       (not (empty? (difference v (ancestors g y))))
       (id y
           (intersection x (ancestors g y))
-          (marginalize p (difference v (ancestors g y)))
+          {:p (ancestors g y)
+           :recur (marginalize p (difference v (ancestors g y)))}
           (subgraph g (ancestors g y)))
 
       ;; line 3
@@ -376,33 +379,48 @@
           ;; line 4
           (let [cg-x (c-components (subgraph g (difference v x)))]
             (if (> (count cg-x) 1)
-              (marginalize (product p
-                                    (vec
-                                      (for [si cg-x]
-                                        (id si
-                                            (difference v si)
-                                            p
-                                            g))))
-                           (difference v (union y x)))
+              (marginalize
+                (product
+                  (for [si cg-x]
+                    (id si
+                        (difference v si)
+                        p
+                        g)))
+                (difference v (union y x)))
 
               ;; line 5 (cgx should be singleton)
               (let [s (first cg-x)
                     cg (c-components g)]
                 (if (= (first cg) (verticies g))
-                  ["fail" g cg-x] ;; restructure?
+                  {:fail g :hedge s} ;; restructure!
 
                   ;; line 6
                   (if (contains? cg s)
-                    (marginalize (product p
-                                          ["P(v_i \\mid v_pi)"]) ;; fix!
-                                 (difference s y))
+                    (let [pi (topological-sort g)]
+                      (marginalize
+                        (product
+                          (for [vi s]
+                            (if (:recur p)
+                              {:recur (:recur p)
+                               :p #{vi} :given (predecessors pi x)}
+                              {:p #{vi} :given (predecessors pi x)})))
+                        (difference s y)))
 
                     ;; line 7;
                     (if-let [s-prime (find-superset cg s)]
-                      (id y
-                          (intersection x s-prime)
-                          (conj p "new P=P(v \\mid ...)")
-                          (subgraph g s-prime))
+                      (let [pi (topological-sort g)
+                            p-prime (product 
+                                      (for [vi s]
+                                        (if (:recur p)
+                                          {:recur (:recur p)
+                                           :p #{vi}
+                                           :given (predecessors pi x)}
+                                          {:p #{vi}
+                                           :given (predecessors pi x)})))]
+                        (id y
+                            (intersection x s-prime)
+                            {:p s-prime :recur p-prime}
+                            (subgraph g s-prime)))
 
                       ;; fall-through
                       (throw (Error. "Should be unreachable")))))))))))))
@@ -413,7 +431,21 @@
   "zID(C?) algorithm
    By default, assume P(v) as data [m q d]; [m q]"
   [y x m]
-  (id y x [] m))
+  (let [p {:p (verticies m)}]
+        (id y x p m)))
+
+
+(def hedge-less
+  (model
+    {:w_1 []
+     :x [:w_1]
+     :y_1 [:x]
+     :w_2 []
+     :y_2 [:w_2]}
+    #{:w_1 :y_1}
+    #{:w_1 :w_2}
+    #{:w_2 :x}
+    #{:w_1 :y_2}))
 
 
 (def kidney
@@ -491,6 +523,8 @@
 (identify #{:y} #{:x} identifiable-e)
 (identify #{:y} #{:x} identifiable-f)
 (identify #{:y} #{:x} identifiable-g)
+
+(identify #{:y_1 :y_2} #{:x} hedge-less)
 
 )
 
