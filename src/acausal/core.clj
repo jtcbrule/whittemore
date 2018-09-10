@@ -40,8 +40,9 @@
 ;; and set of pairs (sets), `bi`
 (defrecord Model [pa bi])
 
+
 ;; TODO: rename args?
-;; TODO: validate no cycles; confounded are members of set
+;; TODO: validate no cycles; confounded are sets
 (defn model
   "Construct a model"
   [dag & confounded]
@@ -61,6 +62,7 @@
 
 
 ;; TODO: refactor (see view-model)
+;; Consider adding support for subscripts
 (defn node->descriptor
   "Graphviz options for node"
   [n]
@@ -88,7 +90,7 @@
           {(Latent. multiedge) multiedge})))
 
 (def rhizome-options
-  [:vertical? false
+  [:vertical? true
    :node->descriptor node->descriptor
    :edge->descriptor edge->descriptor])
 
@@ -96,6 +98,7 @@
 ;; TODO: refactor
 ;; currently a hack, since rhizome doesn't support a clean way to draw
 ;; multiedges; may switch to Dorothy or Tangle
+;; Consider using dotviz, multiedges, with constraint=false for placement
 (defn view-model
   "View model m"
   [m]
@@ -140,9 +143,6 @@
   (Query. (set effect) (set do)))
 
 
-;; TODO: determine structure of Formula
-;; name field(s)?
-(defrecord Formula [f])
 
 
 (defn parents
@@ -269,6 +269,54 @@
                (conj components current-component))))))
 
 
+;; helper function
+(defn find-superset
+  "Given a collection of sets, return a set that is a superset of s,
+  or nil if no such superset exists"
+  [coll s]
+  (first (filter #(subset? s %) coll)))
+
+
+(defn sources
+  "Return all nodes from dag g which have zero in-degree"
+  [g]
+  (set
+    (filter #(empty? (get g %))
+            (keys g))))
+
+
+;; rename/restructure?
+;; probably inefficient
+(defn kahn-cut
+  [g x]
+  (into {}
+        (for [[k v] g
+              :when (not (contains? x k))]
+          [k (difference v x)])))
+
+
+;; TODO: test more thoroughly; restructure?
+;; Should be able to take advantage of d-seperation structure (Tikka paper),
+;; but can save that problem for later
+(defn topological-sort
+  "Given a dag g, return a topological sort"
+  [g]
+  (loop [remaining g
+         result (empty [])]
+    (if (empty? remaining)
+      result
+      (let [frontier (sources remaining)]
+        (if (empty? frontier)
+          (throw (Error. "Not a DAG"))
+          (recur (kahn-cut remaining frontier)
+                 (into result frontier)))))))
+
+
+
+;; TODO: determine structure of Formula
+;; name field(s)?
+(defrecord Formula [f])
+
 
 ;;; TODO: cleanup/restructure
 (defn node->latex
@@ -297,22 +345,9 @@
         (str "\\prod_{i}")))
 
 
-; TODO: write/design
-(defn topological-sort
-  "???"
-  []
-  nil)
 
-
-;; helper function
-(defn find-superset
-  "Given a collection of sets, return a set that is a superset of s,
-  or nil if no such superset exists"
-  [coll s]
-  (first (filter #(subset? s %) coll)))
-
-
-;; TODO: considerable work
+;; TODO: zID;
+;; TODO: more testing, restructure?
 (defn id
   "y set
    x set
@@ -374,6 +409,12 @@
                       
 
   
+(defn identify
+  "zID(C?) algorithm
+   By default, assume P(v) as data [m q d]; [m q]"
+  [y x m]
+  (id y x [] m))
+
 
 (def kidney
   (model 
@@ -443,13 +484,13 @@
 
 (comment 
 
-(id #{:y} #{:x} [] identifiable-a)
-(id #{:y} #{:x} [] identifiable-b)
-(id #{:y} #{:x} [] identifiable-c)
-(id #{:y} #{:x} [] identifiable-d)
-(id #{:y} #{:x} [] identifiable-e)
-(id #{:y} #{:x} [] identifiable-f)
-(id #{:y} #{:x} [] identifiable-g)
+(identify #{:y} #{:x} identifiable-a)
+(identify #{:y} #{:x} identifiable-b)
+(identify #{:y} #{:x} identifiable-c)
+(identify #{:y} #{:x} identifiable-d)
+(identify #{:y} #{:x} identifiable-e)
+(identify #{:y} #{:x} identifiable-f)
+(identify #{:y} #{:x} identifiable-g)
 
 )
 
@@ -520,41 +561,19 @@
 
 (comment
 
-(id #{:y} #{:x} [] non-a)
-(id #{:y} #{:x} [] non-b)
-(id #{:y} #{:x} [] non-c)
-(id #{:y} #{:x} [] non-d)
-(id #{:y} #{:x} [] non-e)
-(id #{:y} #{:x} [] non-f)
-(id #{:y} #{:x} [] non-g)
-(id #{:y} #{:x} [] non-h)
+(identify #{:y} #{:x} non-a)
+(identify #{:y} #{:x} non-b)
+(identify #{:y} #{:x} non-c)
+(identify #{:y} #{:x} non-d)
+(identify #{:y} #{:x} non-e)
+(identify #{:y} #{:x} non-f)
+(identify #{:y} #{:x} non-g)
+(identify #{:y} #{:x} non-h)
 
 )
 
-(comment
 
-(view-model m2)
 
-(difference #{:recovery :size :treatment} #{:treatment})
-
-(cut-incoming kidney #{:treatment})
-
-(ancestors (cut-incoming kidney #{:treatment}) #{:recovery})
-
-(id #{:recovery} #{:treatment} ["P(v)"] kidney)
-
-(id #{:recovery} #{} [] kidney)
-
-)
-
-;; TODO: Restructure; should be (or call) an implementation of zID(C?)
-(defn identify-template
-  "zID(C) algorithm
-   By default, assume P(v) as data"
-  ([m q d]
-   (throw (Error. "Not implemented")))
-  ([m q]
-   nil))
 
 
 ;;; Jupyter integration (TODO: seperate this out later?)
@@ -627,3 +646,19 @@
 
 )
 
+
+(comment
+
+(view-model m2)
+
+(difference #{:recovery :size :treatment} #{:treatment})
+
+(cut-incoming kidney #{:treatment})
+
+(ancestors (cut-incoming kidney #{:treatment}) #{:recovery})
+
+(id #{:recovery} #{:treatment} ["P(v)"] kidney)
+
+(id #{:recovery} #{} [] kidney)
+
+)
