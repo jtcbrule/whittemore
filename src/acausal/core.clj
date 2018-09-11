@@ -1,11 +1,10 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
-  (:require [clojure.pprint :as p]
+  (:require [clojure.pprint :refer [pprint]]
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
             [clojupyter.protocol.mime-convertible :as mc]
-            [rhizome.viz]
-            [rhizome.dot]))
+            [rhizome.viz]))
 
 
 (defmacro error
@@ -122,7 +121,7 @@
   "Returns m as an svg graphic."
   [m]
   (let [children (rhizome-graph m)]
-    (apply rhizome.dot/graph->dot
+    (apply rhizome.viz/graph->svg
            (keys children)
            children
            rhizome-options)))
@@ -293,31 +292,25 @@
       before)))
 
 
-;; TODO: continue refactor from here
+;; TODO: refactor design of formulas
+;; Currently, formulas can be:
+;; :prod #{formulas}
+;; :sum formula, :sub #{vars}
+;; :p #{vars}, :given #{vars} | nil, :where formula | nil
+(defrecord Formula [])
 
-
-;;; TODO: cleanup/restructure
-(defn node->latex
-  [n]
-  (if (keyword? n)
-    (name n)
-    (str n)))
-
-
-;; TODO: cleanup/restucture
 (defn marginalize
-  "\\sum_{sub} p
-   p is the current distribution; sub is a set of vars"
+  "Returns \\sum_{sub} p.
+   p is the current probability function, sub is a set of vars."
   [p sub]
   (if (empty? sub)
     p
     {:sub sub :sum p}))
 
 
-;; TODO: cleanup/restucture
 (defn product
-  "Temporary representation of \\sum_{sub} p
-  coll - collection of probability expressions"
+  "Returns \\prod_i p_i.
+  coll is a collection of probability functions."
   [coll]
   (let [exprs (set coll)]
     (if (= (count exprs) 1)
@@ -325,13 +318,14 @@
       {:prod exprs})))
 
 
-;; TODO: zID;
-;; TODO: more testing, restructure?
+;; TODO: refactor
+;; TODO: implement zID
 (defn id
-  "y set
-   x set
-   p formula type; for now, initially call with {:p #{vars}}
-   g model"
+  "Shpitser's ID algorithm
+  set y
+  set x
+  formula p, initially {:p #{vars}}
+  model g"
   [y x p g]
   (let [v (verticies g)]
     (cond
@@ -406,7 +400,23 @@
 
 ;; TODO: validate arguments of constructor
 ;; TODO: rename arguments of constructor?
-;; Note that i-map is an independence map: (x y z) -> bool
+;; TODO: alias (q ...) to query ?
+(defrecord Query [effect hat])
+
+(defn query
+  "Returns a representation of the causal effect query.
+  e.g. (query [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
+  [effect & {:keys [do] :or {do []}}]
+  (Query. (set effect) (set do)))
+
+(def q
+  "Alias for acausal.core/query."
+  query)
+
+
+;; TODO: validate arguments of constructor
+;; TODO: rename arguments of constructor?
+;; TODO: alias (p ...) to data ?
 (defrecord Data [vars surrogate i-map])
 
 (defn data
@@ -416,25 +426,53 @@
   (Data. (set v) (set do*) i-map))
 
 
-
-;; TODO: validate arguments of constructor
-;; TODO: alias (q ..) to query ?
-(defrecord Query [effect hat])
-
-(defn query
-  "Returns a representation of the causal effect query.
-  e.g. (query [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
-  [effect & {:keys [do] :or {do []}}]
-  (Query. (set effect) (set do)))
-
-
-  
+;; TODO: implement (identify m q d)
 (defn identify
-  "zID(C?) algorithm
-   By default, assume P(v) as data [m q d]; [m q]"
-  [y x m]
-  (let [p {:p (verticies m)}]
-    (id y x p m)))
+  "Returns a formula that computes query q from data d in model m.
+  Data defaults to P(v)."
+  ([m q]
+   (let [p {:p (verticies m)}]
+     (id (:effect q) (:hat q) p m)))
+  ([m q d]
+   (error "Unimplemented")))
+
+
+;; Jupyter integration
+;; TODO: seperate into new namespace?
+
+(extend-protocol mc/PMimeConvertible
+  Model
+  (to-mime [this]
+    (mc/stream-to-string
+      {:image/svg+xml (model->svg this)})))
+
+
+(comment
+
+(extend-protocol mc/PMimeConvertible
+  Formula
+  (to-mime [this]
+    (mc/stream-to-string
+      {:text/latex (str "$" (str this) "$")})))
+
+)
+
+
+;; Example models
+;; TODO: move to dedicated test namespace
+
+(def kidney
+  (model 
+    {:recovery [:treatment :size]
+     :size []
+     :treatment [:size]}))
+
+
+(def blood-pressure
+  (model 
+    {:recovery [:bp :treatment]
+     :bp [:treatment]
+     :treatment []}))
 
 
 (def hedge-less
@@ -450,51 +488,42 @@
     #{:w_1 :y_2}))
 
 
-(def kidney
-  (model 
-    {:recovery [:treatment :size]
-     :size []
-     :treatment [:size]}))
+;; Models where P(y | do(x)) is identifiable
 
-
-(def identifiable-a
+(def ident-a
   (model
     {:y [:x]
      :x []}))
 
-
-(def identifiable-b
+(def ident-b
   (model
     {:x []
      :y [:x :z]
      :z [:x]}
     #{:z :y}))
      
-
-(def identifiable-c
+(def ident-c
   (model
     {:x [:z]
      :y [:x :z]
      :z []}
     #{:z :y}))
-     
 
-(def identifiable-d
+(def ident-d
   (model
     {:x [:z]
      :y [:x :z]
      :z []}
     #{:x :z}))
 
-
-(def identifiable-e
+(def ident-e
   (model
     {:x []
      :y [:z]
      :z [:x]}
     #{:x :y}))
 
-(def identifiable-f
+(def ident-f
   (model
     {:x []
      :z_1 [:x]
@@ -503,7 +532,7 @@
     #{:x :z_2}
     #{:z_1 :y}))
 
-(def identifiable-g
+(def ident-g
   (model
     {:x [:z_2]
      :z_1 [:x :z_2]
@@ -516,38 +545,7 @@
     #{:y :z_2}))
 
 
-(def blood-pressure
-  (model 
-    {:recovery [:blood-pressure :treatment]
-     :blood-pressure [:treatment]
-     :treatment []}))
-
-
-(comment 
-
-(view-model kidney)
-
-(identify #{:y} #{:x} identifiable-a)
-
-(identify #{:x} #{:y} identifiable-a)
-(identify #{:y} #{:x} identifiable-b)
-(identify #{:y} #{:x} identifiable-c)
-(identify #{:y} #{:x} identifiable-d)
-(identify #{:y} #{:x} identifiable-e)
-(identify #{:y} #{:x} identifiable-f)
-
-(identify #{:y} #{:x} identifiable-g)
-
-(p/pprint (identify #{:y_1 :y_2} #{:x} hedge-less))
-
-(p/pprint (identify #{:recovery} #{:treatment} kidney))
-
-(p/pprint (identify #{:recovery} #{:treatment} blood-pressure))
-
-(p/pprint (identify #{:y} #{:x} identifiable-g))
-
-)
-
+;; Models where P(y | do(x)) is not identifiable
 
 (def non-a
   (model
@@ -613,43 +611,8 @@
     #{:z :y}
     #{:z :w}))
 
-(comment
 
-(identify #{:y} #{:x} non-a)
-(identify #{:y} #{:x} non-b)
-(identify #{:y} #{:x} non-c)
-(identify #{:y} #{:x} non-d)
-(identify #{:y} #{:x} non-e)
-(identify #{:y} #{:x} non-f)
-(identify #{:y} #{:x} non-g)
-(identify #{:y} #{:x} non-h)
-
-)
-
-
-
-
-
-;;; Jupyter integration (TODO: seperate this out later?)
-
-(extend-protocol mc/PMimeConvertible
-  Model
-  (to-mime [this]
-    (mc/stream-to-string
-      {:image/svg+xml (model->svg this)})))
-
-(comment
-
-(extend-protocol mc/PMimeConvertible
-  Formula
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (:s this) "$")})))
-
-)
-
-;;; example models
-
+;; Other models
 
 (def m1
   (model
@@ -660,7 +623,6 @@
     [:x :y]
     [:w :z]))
 
-
 (def m2
   (model
     {:w []
@@ -669,50 +631,64 @@
      :x []}
     [:w :y :z]))
 
-
 (def m3
   (model
-         {:x []
-          :z [:x]
-          :y [:z]}
-         #{:x :z :y}))
+    {:x []
+     :z [:x]
+     :y [:z]}
+    #{:x :z :y}))
 
 (def m4
   (model
-         {:v []
-          :w [:v]
-          :z [:w :x]
-          :y [:z]
-          :x []}
-         #{:w :z}
-         #{:z :y :x}))
+    {:v []
+     :w [:v]
+     :z [:w :x]
+     :y [:z]
+     :x []}
+    #{:w :z}
+    #{:z :y :x}))
 
 
-(comment
+;; TODO: remove
 
-(def example #{#{:a :b :c} #{:c :d} #{:g :h} #{:d :f} #{1 2} #{3 4} #{2 5} #{2 9} #{9 10 11}})
+(comment 
 
-(disj (apply union (filter #(contains? % 2) example)) 2)
+(view-model kidney)
 
-(connected-component example 1)
+(def yx (query [:y] :do [:x]))
 
-(c-components m1)
+(identify ident-a yx)
+(identify ident-b yx)
+(identify ident-c yx)
+(identify ident-d yx)
+(identify ident-e yx)
+(identify ident-f yx)
+(identify ident-g yx)
+
+(pprint
+  (identify
+    hedge-less
+    (q [:y_1 :y_2] :do [:x])))
+
+
+(pprint
+  (identify
+    kidney
+    (q [:recovery] :do [:treatment])))
+
+(pprint
+  (identify
+    blood-pressure
+    (q [:recovery] :do [:treatment])))
+
+(identify non-a yx)
+(identify non-b yx)
+(identify non-c yx)
+(identify non-d yx)
+(identify non-e yx)
+(identify non-f yx)
+(identify non-g yx)
+(identify non-h yx)
 
 )
 
-
-(comment
-
-(view-model m2)
-
-(difference #{:recovery :size :treatment} #{:treatment})
-
-(cut-incoming kidney #{:treatment})
-
-(ancestors (cut-incoming kidney #{:treatment}) #{:recovery})
-
-(id #{:recovery} #{:treatment} ["P(v)"] kidney)
-
-(id #{:recovery} #{} [] kidney)
-
-)
