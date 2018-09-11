@@ -1,16 +1,16 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
-  (:require [rhizome.viz]
-            [clojure.set :refer [union subset? intersection difference]]
+  (:require [clojure.pprint :as p]
+            [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
             [clojupyter.protocol.mime-convertible :as mc]
-            [clojure.pprint :as p]))
+            [rhizome.viz]
+            [rhizome.dot]))
 
 
-;; TODO: test more thoroughly
 (defn transpose
-  "Returns the transpose of directed graph g (adjacency list representation)
-  Returns map of nodes -> set of nodes"
+  "Returns the transpose of directed graph g.
+  Graphs are assumed to be of the form {nodes #{nodes}}."
   [g]
   (apply merge-with
          into
@@ -26,9 +26,9 @@
            {v #{k}})))
 
 
-;; TODO: make more efficient
+;; TODO: improve efficiency?
 (defn pairs-of
-  "Returns all pairs of items in coll as set of sets."
+  "Returns all pairs of elements of coll as a set of sets."
   [coll]
   (set
     (for [i coll
@@ -37,58 +37,60 @@
       #{i j})))
 
 
-;; Models are are stored as map of vars to set of parents, `pa`
-;; and set of pairs (sets), `bi`
+
+;; TODO: validate arguments of constructor
 (defrecord Model [pa bi])
 
-
-;; TODO: rename args?
-;; TODO: validate no cycles; confounded are sets
 (defn model
-  "Construct a model"
-  [dag & confounded]
-  (let [bi (apply union (map pairs-of confounded))
+  "Returns a new model from dag with confounding."
+  [dag & confounding]
+  (let [bi (apply union (map pairs-of confounding))
         pa (into {} (for [[k v] dag] [k (set v)]))]
     (Model. pa bi)))
 
 
-;; TODO: refactor
-;; Currently, a hack for the rhizome visualization
+
+;; TODO: refactor (currently a hack for the rhizome visualization)
 (defrecord Latent [ch])
 
 (defn latent?
-  "True iff node is a Latent node"
+  "Returns true iff node is Latent."
   [node]
   (instance? acausal.core.Latent node))
 
 
-;; TODO: refactor (see view-model)
-;; Consider adding support for subscripts
+(defn format-keyword
+  "Returns a html subscripted string, given an appropriate keyword."
+  [kword]
+  (let [s (string/split (name kword) #"_")]
+    (if (= (count s) 2)
+      (str "<" (first s) "<SUB>" (second s) "</SUB>" ">")
+      (name kword))))
+ 
+
 (defn node->descriptor
-  "Graphviz options for node"
-  [n]
-  (if (latent? n)
+  "Graphviz options for nodes."
+  [node]
+  (if (latent? node)
     {:label "", :shape "none", :width 0, :height 0}
-    {:label (if (keyword? n) (name n) (str n))}))
-   ; :shape "circle"
+    {:label (if (keyword? node) (name node) (str node))}))
 
 
-;; TODO: refactor (see view-model)
 (defn edge->descriptor
-  "Graphviz options for edge"
+  "Graphviz options for edges."
   [i j]
   (if (latent? i)
-    {:style "dotted" :arrowhead "empty"} ; :constraint "false"
+    {:style "dotted" :arrowhead "empty"}
     {}))
 
 
-;; TODO: refactor
 (defn rhizome-graph
   "Returns a 'rhizome graph', given model m"
   [m]
   (into (transpose (:pa m))
         (for [multiedge (:bi m)]
           {(Latent. multiedge) multiedge})))
+
 
 (def rhizome-options
   [:vertical? true
@@ -97,11 +99,11 @@
 
 
 ;; TODO: refactor
-;; currently a hack, since rhizome doesn't support a clean way to draw
-;; multiedges; may switch to Dorothy or Tangle
-;; Consider using dotviz, multiedges, with constraint=false for placement
+;; A better design could incorporate 'native' bidirected edges, with
+;; constraint=false, but rhizome doesn't support a clean way to do this.
+;; Consider switching to Dorothy or Tangle.
 (defn view-model
-  "View model m"
+  "Rhizome visualization of model m."
   [m]
   (let [children (rhizome-graph m)]
     (apply rhizome.viz/view-graph
@@ -111,44 +113,44 @@
 
 
 (defn model->svg
-  "Render model m as svg graphic"
+  "Returns m as an svg graphic."
   [m]
   (let [children (rhizome-graph m)]
-    (apply rhizome.viz/graph->svg
+    (apply rhizome.dot/graph->dot
            (keys children)
            children
            rhizome-options)))
 
 
-;; TODO: Needs :imap argument
-;; probably needs a way to define support of random variables
-(defrecord Data [vars surrogate])
 
+;; TODO: validate arguments of constructor
+;; TODO: rename arguments of constructor?
+;; Note that i-map is an independence map: (x y z) -> bool
+(defrecord Data [vars surrogate i-map])
 
-;; TODO: validate
 (defn data
-  "Construct a data object"
-  [v & {:keys [do*] :or {do* []}}]
-  (Data. (set v) (set do*)))
+  "Returns a representation of the known joint probability function.
+  i.e. P(v | do(z')) \\forall z' \\subseteq z"
+  [v & {:keys [do* i-map] :or {do* [] i-map nil}}]
+  (Data. (set v) (set do*) i-map))
 
 
-;; TODO: consider different field names
-;; TODO: consider supporting conditional queries, :given
-;; alias (q ..) to query?
-;; Note that by convention: y is effect, x is do(), w is given
-(defrecord Query [effect do])
+
+;; TODO: validate arguments of constructor
+;; TODO: alias (q ..) to query ?
+(defrecord Query [effect hat])
 
 (defn query
-  "Construct a query"
+  "Returns a representation of the causal effect query.
+  e.g. (query [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
   [effect & {:keys [do] :or {do []}}]
   (Query. (set effect) (set do)))
 
 
 
-
 (defn parents
-  "Pa(x)_m
-  Returns the parents of the (collection of) nodes x in model m."
+  "Returns Pa(x)_m
+  i.e. the parents of the nodes in x for model m."
   [m x]
   (apply union
          (for [node x]
@@ -156,8 +158,8 @@
 
 
 (defn ancestors
-  "An(x)_m
-  Returns the ancestors of the (collection of) nodes x in model m, inclusive."
+  "Returns An(x)_m
+  i.e. the ancestors of the nodes x for model m, inclusive."
   [m x]
   (loop [frontier (set x)
          visited #{}]
@@ -168,26 +170,24 @@
 
 
 (defn verticies
-  "Returns the verticies of model m as a set."
+  "Returns ver(m), i.e. the verticies of model m."
   [m]
   (set (keys (:pa m))))
 
 
-;; Efficient?
 (defn graph-cut
-  "Given a graph (adjacency list) g and set x, return g with all keys in x
-  mapping to #{}."
+  "Returns a new graph where all keys in x now map to #{}.
+  Graphs are assumed to be of the form {nodes #{nodes}}."
   [g x]
   (let [new-kv (for [k x] [k #{}])]
     (into g new-kv)))
 
 
-;; hack?
-;; TODO: can probably improve with transients
-;; see: https://clojuredocs.org/clojure.core/disj%21
+;; TODO: improve efficiency?
+;; Consider using transients: https://clojuredocs.org/clojure.core/disj%21
 (defn pair-cut
-  "Given a set of pairs (sets), return a set of pairs where all pairs that
-  contain an item in x have been removed."
+  "Returns a new set of pairs (sets) such that all pairs that contained an
+  element in x have been removed."
   [pairs x]
   (let [to-remove (filter #(or (contains? x (first %))
                                (contains? x (second %)))
@@ -195,21 +195,20 @@
     (apply disj pairs to-remove)))
 
 
-;; TODO: test more thoroughly
 (defn cut-incoming
-  "G_{\\overline{x}}
-  Returns a model where all incoming edges to nodes in x have been severed in g"
+  "Returns G_{\\overline{x}}
+  i.e. a model where all incoming edges to nodes in x have been severed."
   [m x]
   (let [pa (graph-cut (:pa m) x)
         bi (pair-cut (:bi m) x)]
     (Model. pa bi)))
 
 
-;; may be inefficient
+;; TODO: analyze efficiency
 (defn subgraph
-  "G_{X}
-  Returns a model containing all verticies in (set) x and edges between those
-  verticies, including the bidirected edges"
+  "Returns G_{x}
+  i.e. a model containing only the verticies in (set) x and edges between those
+  verticies, including the bidirected edges."
   [m x]
   (let [to-remove (difference (verticies m) x)
         bi (pair-cut (:bi m) to-remove)
@@ -220,15 +219,7 @@
     (Model. pa bi)))
 
 
-;; TODO: remove?
-(defn latents
-  "Helper function, return set of latents of m"
-  [m]
-  (into #{}
-        (for [[k v] (:pa m)
-              :when (latent? k)]
-          (:ch k))))
-
+;; TODO: REFACTOR CONTINUES FROM HERE
 
 ;; efficient?
 (defn adjacent
@@ -502,23 +493,23 @@
 (def identifiable-f
   (model
     {:x []
-     :z1 [:x]
-     :z2 [:z1]
-     :y [:x :z1 :z2]}
-    #{:x :z2}
-    #{:z1 :y}))
+     :z_1 [:x]
+     :z_2 [:z_1]
+     :y [:x :z_1 :z_2]}
+    #{:x :z_2}
+    #{:z_1 :y}))
 
 (def identifiable-g
   (model
-    {:x [:z2]
-     :z1 [:x :z2]
-     :z2 []
-     :z3 [:z2]
-     :y [:z1 :z3]}
-    #{:x :z2}
-    #{:x :z3}
+    {:x [:z_2]
+     :z_1 [:x :z_2]
+     :z_2 []
+     :z_3 [:z_2]
+     :y [:z_1 :z_3]}
+    #{:x :z_2}
+    #{:x :z_3}
     #{:x :y}
-    #{:y :z2}))
+    #{:y :z_2}))
 
 
 (def blood-pressure
@@ -530,12 +521,17 @@
 
 (comment 
 
+(view-model kidney)
+
 (identify #{:y} #{:x} identifiable-a)
+
+(identify #{:x} #{:y} identifiable-a)
 (identify #{:y} #{:x} identifiable-b)
 (identify #{:y} #{:x} identifiable-c)
 (identify #{:y} #{:x} identifiable-d)
 (identify #{:y} #{:x} identifiable-e)
 (identify #{:y} #{:x} identifiable-f)
+
 (identify #{:y} #{:x} identifiable-g)
 
 (p/pprint (identify #{:y_1 :y_2} #{:x} hedge-less))
@@ -543,6 +539,8 @@
 (p/pprint (identify #{:recovery} #{:treatment} kidney))
 
 (p/pprint (identify #{:recovery} #{:treatment} blood-pressure))
+
+(p/pprint (identify #{:y} #{:x} identifiable-g))
 
 )
 
@@ -594,11 +592,11 @@
 (def non-g
   (model
     {:x []
-     :z1 [:x]
-     :z2 []
-     :y [:z1 :z2]}
-    #{:x :z2}
-    #{:z1 :z2}))
+     :z_1 [:x]
+     :z_2 []
+     :y [:z_1 :z_2]}
+    #{:x :z_2}
+    #{:z_1 :z_2}))
 
 (def non-h
   (model
