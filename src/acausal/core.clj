@@ -8,6 +8,12 @@
             [rhizome.dot]))
 
 
+(defmacro error
+  "Throws a RuntimeException."
+  [& more]
+  `(throw (ex-info (str ~@more) {})))
+
+
 (defn transpose
   "Returns the transpose of directed graph g.
   Graphs are assumed to be of the form {nodes #{nodes}}."
@@ -122,32 +128,6 @@
            rhizome-options)))
 
 
-
-;; TODO: validate arguments of constructor
-;; TODO: rename arguments of constructor?
-;; Note that i-map is an independence map: (x y z) -> bool
-(defrecord Data [vars surrogate i-map])
-
-(defn data
-  "Returns a representation of the known joint probability function.
-  i.e. P(v | do(z')) \\forall z' \\subseteq z"
-  [v & {:keys [do* i-map] :or {do* [] i-map nil}}]
-  (Data. (set v) (set do*) i-map))
-
-
-
-;; TODO: validate arguments of constructor
-;; TODO: alias (q ..) to query ?
-(defrecord Query [effect hat])
-
-(defn query
-  "Returns a representation of the causal effect query.
-  e.g. (query [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
-  [effect & {:keys [do] :or {do []}}]
-  (Query. (set effect) (set do)))
-
-
-
 (defn parents
   "Returns Pa(x)_m
   i.e. the parents of the nodes in x for model m."
@@ -219,25 +199,25 @@
     (Model. pa bi)))
 
 
-;; TODO: REFACTOR CONTINUES FROM HERE
 
-;; efficient?
+;; TODO: make private?
 (defn adjacent
-  "Helper function..."
+  "Returns the nodes adjacent to node (via the bidirected edges in pairs)."
   [pairs node]
   (disj (apply union
                (filter #(contains? % node) pairs))
         node))
 
 
-;; efficient? rename?
+;; TODO: make private?
 (defn connected-component
-  "Helper function... Assumes edges are set of set of multiedges, n is node"
+  "Returns the c-component of node."
   [pairs node]
   (loop [frontier (list node)
          visited #{}]
     (if (empty? frontier)
       visited
+    ;else
       (let [current (peek frontier)]
         (if (contains? visited current)
           (recur (pop frontier)
@@ -247,9 +227,9 @@
                  (conj visited current)))))))
 
 
-;; TODO: test more thoroughly, cleanup
+;; TODO: analyze efficiency
 (defn c-components
-  "Returns the confounded components of m as set of sets of verticies."
+  "Returns the confounded components of m as a set of sets of verticies."
   [m]
   (loop [nodes (verticies m)
          components #{}]
@@ -261,25 +241,25 @@
                (conj components current-component))))))
 
 
-;; helper function
 (defn find-superset
-  "Given a collection of sets, return a set that is a superset of s,
-  or nil if no such superset exists"
+  "Returns a superset of s or nil if no such superset exists.
+  coll is a collection of sets."
   [coll s]
   (first (filter #(subset? s %) coll)))
 
 
 (defn sources
-  "Return all nodes from dag g which have zero in-degree"
+  "Returns a set of all nodes in dag g which have zero in-degree.
+  Assumes that g is of the form {nodes #{parents}}."
   [g]
   (set
     (filter #(empty? (get g %))
             (keys g))))
 
 
-;; rename/restructure?
-;; probably inefficient
+;; TODO: make private?
 (defn kahn-cut
+  "Returns a dag g where all edges to and from x have been removed."
   [g x]
   (into {}
         (for [[k v] g
@@ -287,12 +267,10 @@
           [k (difference v x)])))
 
 
-;; TODO: test more thoroughly; restructure?
-;; Should be able to take advantage of d-seperation structure (Tikka paper),
-;; but can save that problem for later
-;; ?? is a vector the right type for result?
+;; TODO: make more efficienct
 (defn topological-sort
-  "Given a model m, return a topological sort"
+  "Returns a topological sort of verticies in model m.
+  Ties are broken by (sort ...); this ensures a unique sort."
   [m]
   (loop [remaining (:pa m)
          result (empty [])]
@@ -300,21 +278,22 @@
       result
       (let [frontier (sources remaining)]
         (if (empty? frontier)
-          (throw (Error. "Not a DAG"))
+          (error "Not a dag")
           (recur (kahn-cut remaining frontier)
-                 (into result frontier)))))))
+                 (into result (sort frontier))))))))
 
 
-;; WARN: will return entire ordering if v not in ordering
 (defn predecessors
-  "Set of nodes preceding v in topological ordering"
+  "Returns the set of items before v in ordering.
+  Throws an exception if v is not in ordering."
   [ordering v]
-  (set (take-while #(not= % v) ordering)))
+  (let [before (set (take-while #(not= % v) ordering))]
+    (if (= (count before) (count ordering))
+      (error "Not in ordering")
+      before)))
 
 
-;; TODO: determine structure of Formula
-;; name field(s)?
-(defrecord Formula [f])
+;; TODO: continue refactor from here
 
 
 ;;; TODO: cleanup/restructure
@@ -422,7 +401,32 @@
 
                       ;; fall-through
                       (throw (Error. "Should be unreachable")))))))))))))
-                      
+
+
+
+;; TODO: validate arguments of constructor
+;; TODO: rename arguments of constructor?
+;; Note that i-map is an independence map: (x y z) -> bool
+(defrecord Data [vars surrogate i-map])
+
+(defn data
+  "Returns a representation of the known joint probability function.
+  i.e. P(v | do(z')) \\forall z' \\subseteq z"
+  [v & {:keys [do* i-map] :or {do* [] i-map nil}}]
+  (Data. (set v) (set do*) i-map))
+
+
+
+;; TODO: validate arguments of constructor
+;; TODO: alias (q ..) to query ?
+(defrecord Query [effect hat])
+
+(defn query
+  "Returns a representation of the causal effect query.
+  e.g. (query [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
+  [effect & {:keys [do] :or {do []}}]
+  (Query. (set effect) (set do)))
+
 
   
 (defn identify
