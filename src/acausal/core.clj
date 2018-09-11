@@ -401,7 +401,7 @@
 ;; TODO: validate arguments of constructor
 ;; TODO: rename arguments of constructor?
 ;; TODO: alias (q ...) to query ?
-(defrecord Query [effect hat])
+(defrecord Query [effect do])
 
 (defn query
   "Returns a representation of the causal effect query.
@@ -432,19 +432,28 @@
   Data defaults to P(v)."
   ([m q]
    (let [p {:p (verticies m)}]
-     (id (:effect q) (:hat q) p m)))
+     (into (->Formula)
+           (id (:effect q) (:do q) p m))))
   ([m q d]
    (error "Unimplemented")))
 
 
 ;; Jupyter integration
 ;; TODO: seperate into new namespace?
+;; TODO: render Query and Data types?
 
 (extend-protocol mc/PMimeConvertible
   Model
   (to-mime [this]
     (mc/stream-to-string
       {:image/svg+xml (model->svg this)})))
+
+
+(extend-protocol mc/PMimeConvertible
+  Formula
+  (to-mime [this]
+    (mc/stream-to-string
+      {:text/plain (pprint this)})))
 
 
 (comment
