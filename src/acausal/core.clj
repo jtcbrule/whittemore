@@ -388,86 +388,6 @@
     (error "ID preconditions failed")))
 
 
-;; TODO: refactor
-;; TODO: implement zID
-(defn id-old
-  "Old implementation of Shpitser's ID algorithm
-  (currently undergoing a refactor)
-  set y
-  set x
-  formula p, initially {:p #{vars}}
-  model g"
-  [y x p g]
-  (let [v (verticies g)]
-    (cond
-      ;; line 1
-      (empty? x)
-      (marginalize p (difference v y))
-
-      ;; line 2, refactor? (don't need the recur?)
-      (not (empty? (difference v (ancestors g y))))
-      (id y
-          (intersection x (ancestors g y))
-          {:p (ancestors g y)
-           :where (marginalize p (difference v (ancestors g y)))}
-          (subgraph g (ancestors g y)))
-
-      ;; line 3
-      :else
-      (let [w (difference (difference v x) (ancestors (cut-incoming g x) y))]
-        (if (not (empty? w))
-          (id y (union x w) p g)
-          
-          ;; line 4
-          (let [cg-x (c-components (subgraph g (difference v x)))]
-            (if (> (count cg-x) 1)
-              (marginalize
-                (product
-                  (for [si cg-x]
-                    (id si
-                        (difference v si)
-                        p
-                        g)))
-                (difference v (union y x)))
-
-              ;; line 5 (cgx should be singleton)
-              (let [s (first cg-x)
-                    cg (c-components g)]
-                (if (= (first cg) (verticies g))
-                  {:fail g :hedge s} ;; restructure!
-
-                  ;; line 6
-                  (if (contains? cg s)
-                    (let [pi (topological-sort g)]
-                      (marginalize
-                        (product
-                          (for [vi s]
-                            (if (:where p)
-                              {:where (:where p)
-                               :p #{vi} :given (predecessors pi vi)}
-                              {:p #{vi} :given (predecessors pi vi)})))
-                        (difference s y)))
-
-                    ;; line 7;
-                    (if-let [s-prime (find-superset cg s)]
-                      (let [pi (topological-sort g)
-                            p-prime (product 
-                                      (for [vi s]
-                                        (if (:where p)
-                                          {:where (:where p)
-                                           :p #{vi}
-                                           :given (predecessors pi vi)}
-                                          {:p #{vi}
-                                           :given (predecessors pi vi)})))]
-                        (id y
-                            (intersection x s-prime)
-                            {:p s-prime :where p-prime}
-                            (subgraph g s-prime)))
-
-                      ;; fall-through
-                      (throw (Error. "Should be unreachable")))))))))))))
-
-
 
 ;; TODO: validate arguments of constructor
 ;; TODO: rename arguments of constructor?
@@ -517,6 +437,7 @@
      (error "Unimplemented"))))
 
 
+
 ;; Jupyter integration
 ;; TODO: seperate into new namespace?
 ;; TODO: render Query and Data types?
@@ -534,16 +455,6 @@
     (mc/stream-to-string
       {:text/plain (pprint this)})))
 
-
-(comment
-
-(extend-protocol mc/PMimeConvertible
-  Formula
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (str this) "$")})))
-
-)
 
 
 ;; Example models
@@ -737,7 +648,7 @@
     #{:z :y :x}))
 
 
-;; TODO: remove
+;; TODO: move/refactor into tests
 
 (comment 
 
