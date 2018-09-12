@@ -300,6 +300,15 @@
 ;; :p #{vars}, :given #{vars} | nil, :where formula | nil
 (defrecord Formula [])
 
+(defrecord Hedge [g s])
+
+
+(defn formula?
+  "Returns true iff f is a Formula."
+  [f]
+  (instance? acausal.core.Formula f ))
+
+
 (defn marginalize
   "Returns \\sum_{sub} p.
    p is the current probability function, sub is a set of vars."
@@ -319,9 +328,19 @@
       {:prod exprs})))
 
 
+
+;; TODO: refactor
+;; Using exceptions seems like a bit of a hack.
+(defmacro fail
+  "Throws an exception representing a failure to identify.
+  g is a causal diagram. s is a c-component."
+  [g s]
+  `(throw (ex-info "fail" {:hedge (->Hedge ~g ~s)})))
+
+
 ;; TODO: set single topological ordering?
 ;; TODO: can line 2 be simplified?
-;; TODO: restructure line 5
+;; TODO: restructure line 5 ?
 ;; TODO: restructure line 6 and 7, predecessors, :p
 (defn id
   "Shpitser's ID algorithm."
@@ -358,7 +377,7 @@
     :let [s (first c-x)
           c (c-components g)]
     (= c #{v})
-    {:fail g :hedge s}
+    (fail g s)
 
     ;line 6
     :let [pi (topological-sort g)]
@@ -423,13 +442,18 @@
 
 
 ;; TODO: properly implement (identify m q d)
+;; try-catch is a bit of a hack; refactor?
 (defn identify
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v)."
   ([m q]
    (let [p {:p (verticies m)}]
-     (into (->Formula)
-           (id (:effect q) (:do q) p m))))
+     (try
+       (into (->Formula) (id (:effect q) (:do q) p m))
+       (catch clojure.lang.ExceptionInfo e
+         (if-let [h (:hedge (ex-data e))]
+           h
+           (throw e))))))
   ([m q d]
    (if (and (= (:vars d) (verticies m))
             (empty? (:surrogate d)))
@@ -687,6 +711,7 @@
   (identify
     blood-pressure
     (q [:recovery] :do [:treatment])))
+
 
 (identify non-a yx)
 (identify non-b yx)
