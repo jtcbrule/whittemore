@@ -400,7 +400,6 @@
 
 ;; TODO: validate arguments of constructor
 ;; TODO: rename arguments of constructor?
-;; TODO: alias (q ...) to query ?
 (defrecord Query [effect do])
 
 (defn query
@@ -409,14 +408,15 @@
   [effect & {:keys [do] :or {do []}}]
   (Query. (set effect) (set do)))
 
+;; TODO: remove alias?
 (def q
   "Alias for acausal.core/query."
   query)
 
 
 ;; TODO: validate arguments of constructor
-;; TODO: rename arguments of constructor?
-;; TODO: alias (p ...) to data ?
+;; TODO: rename arguments of constructor (joint surrogate)?
+;; TODO: keep explicit i-map argument?
 (defrecord Data [vars surrogate i-map])
 
 (defn data
@@ -425,8 +425,13 @@
   [v & {:keys [do* i-map] :or {do* [] i-map nil}}]
   (Data. (set v) (set do*) i-map))
 
+;; TODO: remove alias?
+(def p
+  "Alias for acausal.core/data"
+  data)
 
-;; TODO: implement (identify m q d)
+
+;; TODO: properly implement (identify m q d)
 (defn identify
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v)."
@@ -435,7 +440,10 @@
      (into (->Formula)
            (id (:effect q) (:do q) p m))))
   ([m q d]
-   (error "Unimplemented")))
+   (if (and (= (:vars d) (verticies m))
+            (empty? (:surrogate d)))
+     (identify m q)
+     (error "Unimplemented"))))
 
 
 ;; Jupyter integration
@@ -663,6 +671,8 @@
 (comment 
 
 (view-model kidney)
+(view-model ident-b)
+(view-model ident-c)
 
 (def yx (query [:y] :do [:x]))
 
@@ -673,6 +683,12 @@
 (identify ident-e yx)
 (identify ident-f yx)
 (identify ident-g yx)
+
+(pprint
+  (identify
+    ident-b
+    (q [:y] :do [:x])
+    (p [:x :y :z])))
 
 (pprint
   (identify
