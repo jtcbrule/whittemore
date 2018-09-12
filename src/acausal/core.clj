@@ -1,6 +1,7 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
-  (:require [clojure.pprint :refer [pprint]]
+  (:require [better-cond.core :as b]
+            [clojure.pprint :refer [pprint]]
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
             [clojupyter.protocol.mime-convertible :as mc]
@@ -318,10 +319,80 @@
       {:prod exprs})))
 
 
+;; TODO: set single topological ordering?
+;; TODO: can line 2 be simplified?
+;; TODO: restructure line 5
+;; TODO: restructure line 6 and 7, predecessors, :p
+(defn id
+  "Shpitser's ID algorithm."
+  [y x p g]
+  (b/cond
+    :let [v (verticies g)]
+    
+    ;line 1
+    (empty? x)
+    (marginalize p (difference v y))
+
+    ;line 2
+    :let [an-y (ancestors g y)]
+    (not (empty? (difference v an-y)))
+    (id y
+        (intersection x an-y)
+        {:p an-y :where (marginalize p (difference v an-y))}
+        (subgraph g an-y))
+
+    ;line 3
+    :let [w (difference (difference v x) (ancestors (cut-incoming g x) y))]
+    (not (empty? w))
+    (id y (union x w) p g)
+    
+    ;line 4
+    :let [c-x (c-components (subgraph g (difference v x)))]
+    (> (count c-x) 1)
+    (marginalize
+      (product (for [si c-x]
+                 (id si (difference v si) p g)))
+      (difference v (union y x)))
+
+    ;line 5
+    :let [s (first c-x)
+          c (c-components g)]
+    (= c #{v})
+    {:fail g :hedge s}
+
+    ;line 6
+    :let [pi (topological-sort g)]
+    (contains? c s)
+    (marginalize
+      (product (for [vi s]
+                 (if (:where p)
+                   {:where (:where p)
+                    :p #{vi} :given (predecessors pi vi)}
+                   {:p #{vi} :given (predecessors pi vi)})))
+      (difference s y))
+
+    ;line 7
+    :let [s-prime (find-superset c s)
+          p-prime (product (for [vi s]
+                             (if (:where p)
+                               {:where (:where p)
+                                :p #{vi} :given (predecessors pi vi)}
+                               {:p #{vi} :given (predecessors pi vi)})))]
+    (not (nil? s-prime))
+    (id y
+        (intersection x s-prime)
+        {:p s-prime :where p-prime}
+        (subgraph g s-prime))
+
+    :else
+    (error "ID preconditions failed")))
+
+
 ;; TODO: refactor
 ;; TODO: implement zID
-(defn id
-  "Shpitser's ID algorithm
+(defn id-old
+  "Old implementation of Shpitser's ID algorithm
+  (currently undergoing a refactor)
   set y
   set x
   formula p, initially {:p #{vars}}
