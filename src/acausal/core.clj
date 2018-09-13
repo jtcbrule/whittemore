@@ -392,7 +392,7 @@
 
     ;line 7
     :let [s-prime (find-superset c s)
-          p-prime (product (for [vi s]
+          p-prime (product (for [vi s-prime] ;; TODO: used to be s
                              (if (:where p)
                                {:where (:where p)
                                 :p #{vi} :given (predecessors pi vi)}
@@ -463,8 +463,10 @@
 
 (defn identifiable?
   "True iff q is identifiable in m from P(v)"
-  [m q]
-  (formula? (identify m q)))
+  ([m q]
+   (formula? (identify m q)))
+  ([m q d]
+   (formula? (identify m q d))))
 
 
 ;; Jupyter integration
@@ -774,9 +776,7 @@
         bi-remove (set (filter #(contains? % x) (:bi m)))
         bi-ends (map #(first (disj % x)) bi-remove)
         bi-add (union (set (cross-pairs bi-ends ch-x))
-                      (if (empty? pa-x)
-                        (pairs-of ch-x)
-                        (empty #{})))
+                      (pairs-of ch-x)) ;; TODO: correct?
         new-bi (union (difference (:bi m) bi-remove) bi-add)]
     (->Model new-pa new-bi)))
 
@@ -794,6 +794,21 @@
 
 
 (comment
+
+  (def tmp
+    (model
+      {:q []
+       :w [:q]
+       :p [:w]
+       :x [:w]
+       :y [:x]
+       :z [:x]}))
+
+(view-model tmp)
+
+(view-model (latent-projection tmp [:w]))
+
+  (view-model tmp)
 
 (let [n 10]
   (view-model (erdos-renyi-model n (/ (java.lang.Math/log 10) 10))))
