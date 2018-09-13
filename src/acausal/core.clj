@@ -461,6 +461,11 @@
      (error "Unimplemented"))))
 
 
+(defn identifiable?
+  "True iff q is identifiable in m from P(v)"
+  [m q]
+  (formula? (identify m q)))
+
 
 ;; Jupyter integration
 ;; TODO: seperate into new namespace?
@@ -744,6 +749,7 @@
       (recur (assoc g (first nodes) (set (random-sample p (rest nodes))))
              (rest nodes)))))
 
+
 ;; temp
 (defn cross-pairs
   [coll1 coll2]
@@ -753,7 +759,7 @@
     #{i j}))
 
 
-;; TODO: refactor, check, efficiency (transients?)
+;; TODO: refactor, check, efficiency (transients?); may be broken
 (defn make-latent
   "Latent project one node"
   [m x]
@@ -767,11 +773,35 @@
                            [k v])))
         bi-remove (set (filter #(contains? % x) (:bi m)))
         bi-ends (map #(first (disj % x)) bi-remove)
-        bi-add (set (cross-pairs bi-ends ch-x))
+        bi-add (union (set (cross-pairs bi-ends ch-x))
+                      (if (empty? pa-x)
+                        (pairs-of ch-x)
+                        (empty #{})))
         new-bi (union (difference (:bi m) bi-remove) bi-add)]
     (->Model new-pa new-bi)))
 
 
+(defn latent-projection
+  "Latent-project x in m."
+  [m x]
+  (reduce #(make-latent %1 %2) m x))
+
+
+(defn erdos-renyi-model
+  "Produce a random model (dag) with n nodes and probability p of edge"
+  [n p]
+  (model (transpose (erdos-renyi-dag n p))))
+
+
+(comment
+
+(let [n 10]
+  (view-model (erdos-renyi-model n (/ (java.lang.Math/log 10) 10))))
+
+(let [n 10]
+  (view-model (erdos-renyi-model n (/ 1 n))))
+
+)
 
 ;; need incanter.charts/scatter-plot
 ;; (-> thechart (.createBufferedImage width height))
