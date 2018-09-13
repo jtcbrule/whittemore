@@ -724,3 +724,56 @@
 
 )
 
+;; Experiments
+
+(defn gen-nodes
+  "Generate n keywords indexed :n_i, from 1"
+  [n]
+  (vec
+    (for [i (range n)]
+      (keyword (str "n_" (inc i))))))
+
+
+;; TODO: make more efficient?
+(defn erdos-renyi-dag
+  "Erdos-renyi model for directed acyclic graphs."
+  [n p]
+  (loop [g {}, nodes (gen-nodes n)]
+    (if (empty? nodes)
+      g
+      (recur (assoc g (first nodes) (set (random-sample p (rest nodes))))
+             (rest nodes)))))
+
+;; temp
+(defn cross-pairs
+  [coll1 coll2]
+  (for [i coll1
+        j coll2
+        :when (not= i j)]
+    #{i j}))
+
+
+;; TODO: refactor, check, efficiency (transients?)
+(defn make-latent
+  "Latent project one node"
+  [m x]
+  (let [pa-x (get (:pa m) x)
+        ch-x (set (map first (filter #(contains? (second %) x) (:pa m))))
+        new-pa (into {}
+                     (for [[k v] (:pa m)
+                           :when (not= k x)]
+                       (if (contains? ch-x k)
+                           [k (disj (into v pa-x) x)]
+                           [k v])))
+        bi-remove (set (filter #(contains? % x) (:bi m)))
+        bi-ends (map #(first (disj % x)) bi-remove)
+        bi-add (set (cross-pairs bi-ends ch-x))
+        new-bi (union (difference (:bi m) bi-remove) bi-add)]
+    (->Model new-pa new-bi)))
+
+
+
+;; need incanter.charts/scatter-plot
+;; (-> thechart (.createBufferedImage width height))
+;; https://github.com/aria42/clojupyter/blob/mime-improvements/examples/incanter-demo.ipynb
+
