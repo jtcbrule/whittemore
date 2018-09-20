@@ -55,6 +55,22 @@
     (Model. pa bi)))
 
 
+(defmacro defmodel
+  "Define a model, as with (def ...), but return the value of the model.
+  Useful for notebook usage."
+  [name docstring? & args]
+  (if (string? docstring?)
+    `(do
+       (def ~name
+         ~docstring?
+         (model ~@args))
+       ~name)
+    `(do
+       (def ~name
+         (model
+           ~docstring? ~@args))
+       ~name)))
+
 
 ;; TODO: refactor (currently a hack for the rhizome visualization)
 (defrecord Latent [ch])
