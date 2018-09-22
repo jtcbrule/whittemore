@@ -364,7 +364,7 @@
 ;; TODO: set single topological ordering?
 ;; TODO: can line 2 be simplified?
 ;; TODO: restructure line 5 ?
-;; TODO: restructure line 6 and 7, predecessors, :p
+;; TODO: restructure line 6 and 7, predecessors, :p, :given shouldn't be empty
 ;; TODO: restructure fail (make optional?)
 (defn id
   "Shpitser's ID algorithm."
@@ -453,29 +453,35 @@
     nil))
 
 
+(comment
+
+  (if-let [[g s] (extract-hedge pre-form)]
+    (->Hedge g s)
+    )
+
+)
+
 ;; TODO: rename?
 (defn compile-formula
-  "Returns a valid formula, given the result of an (id ...) call."
+  "Returns a valid formula, given a pre-formula, i.e. result of (id ...)"
   [pre-form]
-  (if-let [hedge (extract-hedge pre-form)]
-    (apply ->Hedge hedge)
-    (cond
-      (:sum pre-form)
-      {:sum (compile-formula (:sum pre-form)) :sub (:sub pre-form)}
+  (cond
+    (:sum pre-form)
+    {:sum (compile-formula (:sum pre-form)) :sub (:sub pre-form)}
 
-      (:prod pre-form)
-      {:prod (set (map compile-formula (:prod pre-form)))}
+    (:prod pre-form)
+    {:prod (set (map compile-formula (:prod pre-form)))}
 
-      (and (:where pre-form) (nil? (:given pre-form)))
-      (compile-formula (:where pre-form))
+    (and (:where pre-form) (nil? (:given pre-form)))
+    (compile-formula (:where pre-form))
 
-      (and (:where pre-form) (:given pre-form))
-      (let [where (compile-formula (:where pre-form))]
-        {:numer where
-         :denom (marginalize where (:p pre-form))})
+    (and (:where pre-form) (:given pre-form))
+    (let [where (compile-formula (:where pre-form))]
+      {:numer where
+       :denom (marginalize where (:p pre-form))})
 
-      :else
-      pre-form)))
+    :else
+    pre-form))
 
 
 ;; TODO: validate arguments of constructor
@@ -512,13 +518,16 @@
 
 
 ;; TODO: properly implement (identify m q d)
-;; TODO: remove try-catch, implement compile-formula
+;; NOTE returns either a Formula or a Hedge
 (defn identify
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v)."
   ([m q]
-   (let [p {:p (verticies m)}]
-     (compile-formula (id (:effect q) (:do q) p m))))
+   (let [pre-form (id (:effect q) (:do q) {:p (verticies m)} m)]
+     (if-let [hedge (extract-hedge pre-form)]
+       (apply ->Hedge hedge)
+       (into (->Formula)
+             (compile-formula pre-form)))))
   ([m q d]
    (if (and (= (:vars d) (verticies m))
             (empty? (:surrogate d)))
@@ -535,9 +544,58 @@
    (formula? (identify m q d))))
 
 
+;; TODO: improve
+(defn node->str
+  "..."
+  [n]
+  (let [raw-str (if (keyword? n) (name n) (str n))]
+    (cond
+      (string/includes? raw-str "_") raw-str
+      (= (count raw-str) 1) raw-str
+      :else (format "\\text{%s}" raw-str))))
+
+
+(defn set->str
+  "..."
+  [s]
+  (string/join ", " (map node->str (sort s))))
+
+
+;;; BORK
+(defn formula->latex
+  "'Compile' a formula to a valid LaTeX math string."
+  [formula]
+  (cond
+    (:sum formula)
+    (format "(\\sum_{%s} %s)"
+            (set->str (:sub formula))
+            (formula->latex (:sum formula)))
+
+    (:prod formula)
+    (string/join " " (map formula->latex (:prod formula)))
+
+    (:numer formula)
+    (format "\\frac{%s}{%s}"
+            (formula->latex (:numer formula))
+            (formula->latex (:denom formula)))
+
+    ;; This is a hack; TODO: fix id so it doesn't return empty :given sets
+    (and (:given formula) (not (empty? (:given formula))))
+    (format "P(%s \\mid %s)"
+            (set->str (:p formula))
+            (set->str (:given formula)))
+
+    (:p formula)
+    (format "P(%s)" (set->str (:p formula)))
+
+    :else
+    (error "Unable to compile to LaTeX")))
+
+
 ;; Jupyter integration
 ;; TODO: seperate into new namespace?
-;; TODO: render Query and Data types?
+;; TODO: render Query and Data types? (probably not)
+;; TODO: render Hedge
 
 (extend-protocol mc/PMimeConvertible
   Model
@@ -550,8 +608,7 @@
   Formula
   (to-mime [this]
     (mc/stream-to-string
-      {:text/plain (pprint this)})))
-
+      {:text/latex (str "\\[" (formula->latex this) "\\]")})))
 
 
 ;; Example models
@@ -583,6 +640,16 @@
     #{:w_2 :x}
     #{:w_1 :y_2}))
 
+
+(def napkin
+    "Napkin model"
+    (model
+        {:z_1 [:z_2]
+         :x [:z_1]
+         :y [:x]
+         :z_2 []}
+        #{:x :z_2}
+        #{:z_2 :y}))
 
 ;; Models where P(y | do(x)) is identifiable
 
@@ -753,21 +820,33 @@
 (view-model ident-b)
 (view-model ident-c)
 
-(def yx (query [:y] :do [:x]))
 
-(identify ident-a yx)
-(identify ident-b yx)
-(identify ident-c yx)
-(identify ident-d yx)
-(identify ident-e yx)
-(identify ident-f yx)
-(identify ident-g yx)
+(identify ident-a (q [:y] :do [:x]))
+(identify ident-b (q [:y] :do [:x]))
+(identify ident-c (q [:y] :do [:x]))
+(identify ident-d (q [:y] :do [:x]))
+(identify ident-e (q [:y] :do [:x]))
+(identify ident-f (q [:y] :do [:x]))
+(identify ident-g (q [:y] :do [:x]))
+
+(->
+  (identify
+    ident-g
+    (q [:y] :do [:x]))
+  formula->latex)
 
 (pprint
   (identify
     ident-b
     (q [:y] :do [:x])
     (p [:x :y :z])))
+
+
+(pprint
+  (identify
+    ident-g
+    (q [:y] :do [:x])))
+
 
 (pprint
   (identify
@@ -786,14 +865,14 @@
     (q [:recovery] :do [:treatment])))
 
 
-(identify non-a yx)
-(identify non-b yx)
-(identify non-c yx)
-(identify non-d yx)
-(identify non-e yx)
-(identify non-f yx)
-(identify non-g yx)
-(identify non-h yx)
+(identify non-a (q [:y] :do [:x]))
+(identify non-b (q [:y] :do [:x]))
+(identify non-c (q [:y] :do [:x]))
+(identify non-d (q [:y] :do [:x]))
+(identify non-e (q [:y] :do [:x]))
+(identify non-f (q [:y] :do [:x]))
+(identify non-g (q [:y] :do [:x]))
+(identify non-h (q [:y] :do [:x]))
 
 )
 
