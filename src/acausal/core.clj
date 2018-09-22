@@ -316,6 +316,10 @@
 ;; :p #{vars}, :given #{vars} | nil, :where formula | nil
 (defrecord Formula [])
 
+;; hedge structure
+;; g is a model that is a c-component
+;; s is a subset of verticies such that G, G \intersect S is a hedge
+;; TODO: Hedges should be renderable (highlight the subset?)
 (defrecord Hedge [g s])
 
 
@@ -324,7 +328,7 @@
   [f]
   (instance? acausal.core.Formula f ))
 
-
+;; reorder args?
 (defn marginalize
   "Returns \\sum_{sub} p.
    p is the current probability function, sub is a set of vars."
@@ -347,6 +351,7 @@
 
 ;; TODO: refactor
 ;; Using exceptions seems like a bit of a hack.
+;; Premature optimization? Consider just returning a :hedge in the pre-formula
 (defmacro fail
   "Throws an exception representing a failure to identify.
   g is a causal diagram. s is a c-component."
@@ -354,10 +359,13 @@
   `(throw (ex-info "fail" {:hedge (->Hedge ~g ~s)})))
 
 
+;; NOTE: returns a 'pre-formula'
+;; NOTE: assumed to be called with p = {:p (verticies g)}
 ;; TODO: set single topological ordering?
 ;; TODO: can line 2 be simplified?
 ;; TODO: restructure line 5 ?
 ;; TODO: restructure line 6 and 7, predecessors, :p
+;; TODO: restructure fail (make optional?)
 (defn id
   "Shpitser's ID algorithm."
   [y x p g]
@@ -393,7 +401,7 @@
     :let [s (first c-x)
           c (c-components g)]
     (= c #{v})
-    (fail g s)
+    {:hedge [g s]}
 
     ;line 6
     :let [pi (topological-sort g)]
@@ -408,7 +416,7 @@
 
     ;line 7
     :let [s-prime (find-superset c s)
-          p-prime (product (for [vi s-prime] ;; TODO: used to be s
+          p-prime (product (for [vi s-prime]
                              (if (:where p)
                                {:where (:where p)
                                 :p #{vi} :given (predecessors pi vi)}
@@ -422,6 +430,52 @@
     :else
     (error "ID preconditions failed")))
 
+
+;; TODO: rename?
+(defn extract-hedge
+  "Walk the pre-formula and return the (first) hedge as [g s].
+  Returns nil if no hedge exists."
+  [pre-form]
+  (cond
+    (:hedge pre-form)
+    (:hedge pre-form)
+
+    (:sum pre-form)
+    (extract-hedge (:sum pre-form))
+
+    (:where pre-form)
+    (extract-hedge (:where pre-form))
+
+    (:prod pre-form)
+    (first (remove nil? (map extract-hedge (:prod pre-form))))
+
+    :else
+    nil))
+
+
+;; TODO: rename?
+(defn compile-formula
+  "Returns a valid formula, given the result of an (id ...) call."
+  [pre-form]
+  (if-let [hedge (extract-hedge pre-form)]
+    (apply ->Hedge hedge)
+    (cond
+      (:sum pre-form)
+      {:sum (compile-formula (:sum pre-form)) :sub (:sub pre-form)}
+
+      (:prod pre-form)
+      {:prod (set (map compile-formula (:prod pre-form)))}
+
+      (and (:where pre-form) (nil? (:given pre-form)))
+      (compile-formula (:where pre-form))
+
+      (and (:where pre-form) (:given pre-form))
+      (let [where (compile-formula (:where pre-form))]
+        {:numer where
+         :denom (marginalize where (:p pre-form))})
+
+      :else
+      pre-form)))
 
 
 ;; TODO: validate arguments of constructor
@@ -458,18 +512,13 @@
 
 
 ;; TODO: properly implement (identify m q d)
-;; try-catch is a bit of a hack; refactor?
+;; TODO: remove try-catch, implement compile-formula
 (defn identify
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v)."
   ([m q]
    (let [p {:p (verticies m)}]
-     (try
-       (into (->Formula) (id (:effect q) (:do q) p m))
-       (catch clojure.lang.ExceptionInfo e
-         (if-let [h (:hedge (ex-data e))]
-           h
-           (throw e))))))
+     (compile-formula (id (:effect q) (:do q) p m))))
   ([m q d]
    (if (and (= (:vars d) (verticies m))
             (empty? (:surrogate d)))
@@ -477,6 +526,7 @@
      (error "Unimplemented"))))
 
 
+;; BORK
 (defn identifiable?
   "True iff q is identifiable in m from P(v)"
   ([m q]
