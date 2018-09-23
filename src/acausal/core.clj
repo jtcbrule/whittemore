@@ -567,7 +567,7 @@
   [formula]
   (cond
     (:sum formula)
-    (format "(\\sum_{%s} %s)"
+    (format "\\left[ \\sum_{%s} %s \\right]"
             (set->str (:sub formula))
             (formula->latex (:sum formula)))
 
@@ -604,11 +604,20 @@
       {:image/svg+xml (model->svg this)})))
 
 
+;; TODO: fix this hack
+(defn trim-brackets
+  [s]
+  (if (and (string/starts-with? s "\\left[")
+           (string/ends-with? s "\\right]"))
+    (subs s 7 (- (count s) 8))
+    s))
+
+
 (extend-protocol mc/PMimeConvertible
   Formula
   (to-mime [this]
     (mc/stream-to-string
-      {:text/latex (str "\\[" (formula->latex this) "\\]")})))
+      {:text/latex (str "$$" (trim-brackets (formula->latex this)) "$$")})))
 
 
 ;; Example models
