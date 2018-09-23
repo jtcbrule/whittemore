@@ -144,6 +144,47 @@
            rhizome-options)))
 
 
+;; TODO: refactor
+
+(defn hedge->descriptor
+  "Graphviz options for nodes."
+  [hedgeset node]
+  (cond
+    (latent? node)
+    {:label "", :shape "none", :width 0, :height 0}
+
+    (contains? hedgeset node)
+    {:label (if (keyword? node) (name node) (str node))
+     :color "red"}
+
+    :else
+    {:label (if (keyword? node) (name node) (str node))}))
+
+
+(defn view-hedge
+  [h]
+  (let [children (rhizome-graph (:g h))]
+    (rhizome.viz/view-graph
+      (keys children)
+      children
+      :vertical? true
+      :edge->descriptor edge->descriptor
+      :node->descriptor (partial hedge->descriptor (:s h)))))
+
+(defn hedge->svg
+  [h]
+  (let [children (rhizome-graph (:g h))]
+    (rhizome.viz/graph->svg
+      (keys children)
+      children
+      :options {:label "FAIL" :labelloc "t"}
+      :vertical? true
+      :edge->descriptor edge->descriptor
+      :node->descriptor (partial hedge->descriptor (:s h)))))
+
+;;;
+
+
 (defn parents
   "Returns Pa(x)_m
   i.e. the parents of the nodes in x for model m."
@@ -502,14 +543,16 @@
 
 ;; TODO: validate arguments of constructor
 ;; TODO: rename arguments of constructor (joint surrogate)?
-;; TODO: keep explicit i-map argument?
-(defrecord Data [vars surrogate i-map])
+;; TODO: add explicit i-map argument?
+;; TODO: remove explicit surrogate constructor?
+;; TODO: rename vars to joint
+(defrecord Data [joint surrogate])
 
 (defn data
   "Returns a representation of the known joint probability function.
   i.e. P(v | do(z')) \\forall z' \\subseteq z"
-  [v & {:keys [do* i-map] :or {do* [] i-map nil}}]
-  (Data. (set v) (set do*) i-map))
+  [v & {:keys [do*] :or {do* []}}]
+  (Data. (set v) (set do*)))
 
 ;; TODO: remove alias?
 (def p
@@ -529,7 +572,7 @@
        (into (->Formula)
              (compile-formula pre-form)))))
   ([m q d]
-   (if (and (= (:vars d) (verticies m))
+   (if (and (= (:joint d) (verticies m))
             (empty? (:surrogate d)))
      (identify m q)
      (error "Unimplemented"))))
@@ -618,6 +661,14 @@
   (to-mime [this]
     (mc/stream-to-string
       {:text/latex (str "$$" (trim-brackets (formula->latex this)) "$$")})))
+
+
+(extend-protocol mc/PMimeConvertible
+  Hedge
+  (to-mime [this]
+    (mc/stream-to-string
+      {:image/svg+xml (hedge->svg this)})))
+
 
 
 ;; Example models
