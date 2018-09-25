@@ -371,14 +371,6 @@
   [f]
   (instance? acausal.core.Formula f ))
 
-;; reorder args?
-(defn marginalize
-  "Returns \\sum_{sub} p.
-   p is the current probability function, sub is a set of vars."
-  [p sub]
-  (if (empty? sub)
-    p
-    {:sub sub :sum p}))
 
 (defn sum
   "Returns \\sum_{sub} p"
@@ -404,6 +396,9 @@
       (dissoc new-p :where)
       new-p)))
 
+(defn fail [g s]
+  {:hedge [g s]})
+
 
 ;;  old line 2
 ;; {:p an-y :where (marginalize p (difference v an-y))}
@@ -427,7 +422,7 @@
     (not (empty? (difference v ancestors-y)))
     (id y
         (intersection x ancestors-y)
-        (sum (difference ancestors-y) p)
+        (sum (difference v ancestors-y) p)
         (subgraph g ancestors-y))
 
 
@@ -448,7 +443,7 @@
     :let [s (first c-x)
           c (c-components g)]
     (= c #{v})
-    {:hedge [g s]}
+    (fail g s)
 
     ;line 6 !!!
     :let [pi (topological-sort g)]
