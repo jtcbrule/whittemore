@@ -5,7 +5,9 @@
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
             [clojupyter.protocol.mime-convertible :as mc]
-            [rhizome.viz]))
+            [rhizome.viz]
+            [incanter.charts]
+            [incanter.core]))
 
 
 (defmacro error
@@ -196,7 +198,7 @@
 
 (defn ancestors
   "Returns An(x)_m
-  i.e. the ancestors of the nodes x for model m, inclusive."
+  i.e. the ancestors of the nodes in x for model m, inclusive."
   [m x]
   (loop [frontier (set x)
          visited #{}]
@@ -284,7 +286,7 @@
                  (conj visited current)))))))
 
 
-;; TODO: analyze efficiency
+;; TODO: analyze efficiency; test more
 (defn c-components
   "Returns the confounded components of m as a set of sets of verticies."
   [m]
@@ -378,6 +380,12 @@
     p
     {:sub sub :sum p}))
 
+(defn sum
+  "Returns \\sum_{sub} p"
+  [sub p]
+  (if (empty? sub)
+    p
+    {:sub sub :sum p}))
 
 (defn product
   "Returns \\prod_i p_i.
@@ -388,25 +396,22 @@
       (first exprs)
       {:prod exprs})))
 
+(defn given-pi
+  "Returns P(vi \\mid v_{pi}^(i-1)"
+  [p vi pi]
+  (let [new-p {:p #{vi} :given (predecessors pi vi) :where p}]
+    (if (empty? (:given new-p))
+      (dissoc new-p :where)
+      new-p)))
 
 
-;; TODO: refactor
-;; Using exceptions seems like a bit of a hack.
-;; Premature optimization? Consider just returning a :hedge in the pre-formula
-(defmacro fail
-  "Throws an exception representing a failure to identify.
-  g is a causal diagram. s is a c-component."
-  [g s]
-  `(throw (ex-info "fail" {:hedge (->Hedge ~g ~s)})))
-
+;;  old line 2
+;; {:p an-y :where (marginalize p (difference v an-y))}
 
 ;; NOTE: returns a 'pre-formula'
 ;; NOTE: assumed to be called with p = {:p (verticies g)}
 ;; TODO: set single topological ordering?
-;; TODO: can line 2 be simplified?
-;; TODO: restructure line 5 ?
-;; TODO: restructure line 6 and 7, predecessors, :p, :given shouldn't be empty
-;; TODO: restructure fail (make optional?)
+;; TODO: verify line 7 more
 (defn id
   "Shpitser's ID algorithm."
   [y x p g]
@@ -415,15 +420,16 @@
     
     ;line 1
     (empty? x)
-    (marginalize p (difference v y))
+    (sum (difference v y) p)
 
     ;line 2
-    :let [an-y (ancestors g y)]
-    (not (empty? (difference v an-y)))
+    :let [ancestors-y (ancestors g y)]
+    (not (empty? (difference v ancestors-y)))
     (id y
-        (intersection x an-y)
-        {:p an-y :where (marginalize p (difference v an-y))}
-        (subgraph g an-y))
+        (intersection x ancestors-y)
+        (sum (difference ancestors-y) p)
+        (subgraph g ancestors-y))
+
 
     ;line 3
     :let [w (difference (difference v x) (ancestors (cut-incoming g x) y))]
@@ -433,10 +439,10 @@
     ;line 4
     :let [c-x (c-components (subgraph g (difference v x)))]
     (> (count c-x) 1)
-    (marginalize
-      (product (for [si c-x]
-                 (id si (difference v si) p g)))
-      (difference v (union y x)))
+    (sum (difference v (union y x))
+         (product
+           (for [si c-x]
+             (id si (difference v si) p g))))
 
     ;line 5
     :let [s (first c-x)
@@ -444,28 +450,23 @@
     (= c #{v})
     {:hedge [g s]}
 
-    ;line 6
+    ;line 6 !!!
     :let [pi (topological-sort g)]
     (contains? c s)
-    (marginalize
-      (product (for [vi s]
-                 (if (:where p)
-                   {:where (:where p)
-                    :p #{vi} :given (predecessors pi vi)}
-                   {:p #{vi} :given (predecessors pi vi)})))
-      (difference s y))
+    (sum (difference s y)
+         (product
+           (for [vi s]
+             (given-pi p vi pi))))
 
     ;line 7
     :let [s-prime (find-superset c s)
-          p-prime (product (for [vi s-prime]
-                             (if (:where p)
-                               {:where (:where p)
-                                :p #{vi} :given (predecessors pi vi)}
-                               {:p #{vi} :given (predecessors pi vi)})))]
+          p-prime (product
+                    (for [vi s-prime]
+                      (given-pi p vi pi)))]
     (not (nil? s-prime))
     (id y
         (intersection x s-prime)
-        {:p s-prime :where p-prime}
+        p-prime
         (subgraph g s-prime))
 
     :else
@@ -578,13 +579,15 @@
      (error "Unimplemented"))))
 
 
-;; BORK
+;; TODO: cleanup
 (defn identifiable?
   "True iff q is identifiable in m from P(v)"
   ([m q]
-   (formula? (identify m q)))
+   (if (extract-hedge (id (:effect q) (:do q) {:p (verticies m)} m))
+     false
+     true))
   ([m q d]
-   (formula? (identify m q d))))
+   (error "Unimplemented")))
 
 
 ;; TODO: improve
@@ -876,10 +879,19 @@
 
 (comment 
 
+(view-model m4)
+
+(ancestors m4 [:z])
+
+(view-model hedge-less)
+
+(c-components hedge-less)
+
 (view-model kidney)
 (view-model ident-b)
-(view-model ident-c)
+(view-model ident-g)
 
+(topological-sort ident-g)
 
 (identify ident-a (q [:y] :do [:x]))
 (identify ident-b (q [:y] :do [:x]))
@@ -888,6 +900,15 @@
 (identify ident-e (q [:y] :do [:x]))
 (identify ident-f (q [:y] :do [:x]))
 (identify ident-g (q [:y] :do [:x]))
+
+(identifiable? ident-a (q [:y] :do [:x]))
+(identifiable? ident-b (q [:y] :do [:x]))
+(identifiable? ident-c (q [:y] :do [:x]))
+(identifiable? ident-d (q [:y] :do [:x]))
+(identifiable? ident-e (q [:y] :do [:x]))
+(identifiable? ident-f (q [:y] :do [:x]))
+(identifiable? ident-g (q [:y] :do [:x]))
+
 
 (->
   (identify
@@ -900,6 +921,10 @@
     ident-b
     (q [:y] :do [:x])
     (p [:x :y :z])))
+
+(->
+  (identify napkin (q [:y] :do [:x]))
+  formula->latex)
 
 
 (pprint
@@ -934,6 +959,16 @@
 (identify non-g (q [:y] :do [:x]))
 (identify non-h (q [:y] :do [:x]))
 
+(identifiable? non-a (q [:y] :do [:x]))
+(identifiable? non-b (q [:y] :do [:x]))
+(identifiable? non-c (q [:y] :do [:x]))
+(identifiable? non-d (q [:y] :do [:x]))
+(identifiable? non-e (q [:y] :do [:x]))
+(identifiable? non-f (q [:y] :do [:x]))
+(identifiable? non-g (q [:y] :do [:x]))
+(identifiable? non-h (q [:y] :do [:x]))
+
+
 )
 
 ;; Experiments
@@ -966,7 +1001,7 @@
     #{i j}))
 
 
-;; TODO: refactor, check, efficiency (transients?); may be broken
+;; TODO: refactor, check implementation, efficiency (transients?)
 (defn make-latent
   "Latent project one node"
   [m x]
@@ -998,6 +1033,84 @@
   (model (transpose (erdos-renyi-dag n p))))
 
 
+
+(defn josh-model
+  "n nodes, p probability of edge, q probability of confounding"
+  [n p q]
+  (let [confounding (random-sample q (pairs-of (gen-nodes n)))]
+    (apply model (transpose (erdos-renyi-dag n p)) confounding)))
+
+
+;; TODO: fix hack
+(defn nontrivial-singleton-queries
+  [nodes]
+  (for [i nodes
+        j nodes
+        :when (< (compare i j) 0)]
+    (q [i] :do [j])))
+
+
+(defn percent-nontrivial-id
+  [m]
+  (let [queries (nontrivial-singleton-queries (verticies m))]
+    (/
+     (->>
+       queries
+       (map #(identifiable? m %))
+       (filter identity)
+       count)
+     (count queries))))
+
+
+(defn er-num [num-vars]
+  "Erdos Renyi number"
+    (/ (java.lang.Math/log num-vars) num-vars))
+
+
+(defn mean
+  [coll]
+  (/ (reduce + coll) (count coll)))
+
+
+(defn gen-josh-model!
+  [num-vars p q]
+  #(josh-model num-vars p q))
+
+(comment
+
+(map
+  #(->>
+     (gen-josh-model! 10 (er-num 10) %)
+     repeatedly
+     (map (fn [m] (identifiable? m (q [:n_9] :do [:n_1]))))
+     (take 1000)
+     (filter identity)
+     count)
+  (range 0 1 0.1))
+
+)
+
+
+(nontrivial-singleton-queries (verticies (josh-model 10 (* 2 (er-num 10)) 0.9)))
+
+
+(def a-run
+  (map
+    #(mean
+      (take 1000
+            (map percent-nontrivial-id
+                 (repeatedly (fn [] (josh-model 10 (* 2 (er-num 10)) %))))))
+    (range 0 1 0.05)))
+
+(comment
+
+(incanter.core/view
+  (incanter.charts/scatter-plot
+    (range 0 1 0.05)
+    a-run))
+
+)
+
 (comment
 
   (def tmp
@@ -1011,7 +1124,7 @@
 
 (view-model tmp)
 
-(view-model (latent-projection tmp [:w]))
+(view-model (latent-projection tmp [:w :x]))
 
   (view-model tmp)
 
