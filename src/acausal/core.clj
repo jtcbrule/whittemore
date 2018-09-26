@@ -6,8 +6,9 @@
             [clojure.string :as string]
             [clojupyter.protocol.mime-convertible :as mc]
             [rhizome.viz]
-            [incanter.charts]
-            [incanter.core]))
+            ;;[incanter.charts]
+            ;;[incanter.core]
+            ))
 
 
 (defmacro error
@@ -389,12 +390,12 @@
       {:prod exprs})))
 
 (defn given-pi
-  "Returns P(vi \\mid v_{pi}^(i-1)"
+  "Returns P(vi \\mid v_{pi}^(i-1))"
   [p vi pi]
-  (let [new-p {:p #{vi} :given (predecessors pi vi) :where p}]
-    (if (empty? (:given new-p))
-      (dissoc new-p :where)
-      new-p)))
+  (let [pred (predecessors pi vi)]
+    (if (empty? pred)
+      {:p #{vi} :where p}
+      {:p #{vi} :given pred :where p})))
 
 (defn fail [g s]
   {:hedge [g s]})
@@ -406,7 +407,7 @@
 ;; NOTE: returns a 'pre-formula'
 ;; NOTE: assumed to be called with p = {:p (verticies g)}
 ;; TODO: set single topological ordering?
-;; TODO: verify line 7 more
+;; TODO: verify line 7
 (defn id
   "Shpitser's ID algorithm."
   [y x p g]
@@ -424,7 +425,6 @@
         (intersection x ancestors-y)
         (sum (difference v ancestors-y) p)
         (subgraph g ancestors-y))
-
 
     ;line 3
     :let [w (difference (difference v x) (ancestors (cut-incoming g x) y))]
@@ -445,7 +445,7 @@
     (= c #{v})
     (fail g s)
 
-    ;line 6 !!!
+    ;line 6
     :let [pi (topological-sort g)]
     (contains? c s)
     (sum (difference s y)
@@ -453,7 +453,7 @@
            (for [vi s]
              (given-pi p vi pi))))
 
-    ;line 7
+    ;line 7 ?
     :let [s-prime (find-superset c s)
           p-prime (product
                     (for [vi s-prime]
@@ -490,35 +490,63 @@
     nil))
 
 
-(comment
+(defn free
+  "Returns the set of free variables in formula."
+  [form]
+  (cond
+    (:where form)
+    (error "Unsupported")
 
-  (if-let [[g s] (extract-hedge pre-form)]
-    (->Hedge g s)
-    )
+    (:given form)
+    (union (:given form) (:p form))
 
-)
+    (:p form)
+    (:p form)
 
-;; TODO: rename?
+    (:prod form)
+    (apply union (map free (:prod form)))
+
+    (:sum form)
+    (difference (free (:sum form)) (:sub form))
+
+    (:numer form)
+    (union (free (:numer form)) (free (:denom form)))
+    
+    :else
+    (error "free preconditions failed")))
+
+
+
+;; TODO: refactor
 (defn compile-formula
   "Returns a valid formula, given a pre-formula, i.e. result of (id ...)"
   [pre-form]
-  (cond
+  (b/cond
     (:sum pre-form)
     {:sum (compile-formula (:sum pre-form)) :sub (:sub pre-form)}
 
     (:prod pre-form)
     {:prod (set (map compile-formula (:prod pre-form)))}
 
-    (and (:where pre-form) (nil? (:given pre-form)))
-    (compile-formula (:where pre-form))
+    (nil? (:where pre-form))
+    pre-form
 
-    (and (:where pre-form) (:given pre-form))
-    (let [where (compile-formula (:where pre-form))]
-      {:numer where
-       :denom (marginalize where (:p pre-form))})
+    :let [old-where (compile-formula (:where pre-form))
+          current-free (if (:given pre-form)
+                         (union (:p pre-form) (:given pre-form))
+                         (:p pre-form))
+          unbound (difference (free old-where) current-free)
+          new-where (sum unbound old-where)]
+
+    (:given pre-form)
+    {:numer new-where
+     :denom (sum (:p pre-form) new-where)}
+
+    (:p pre-form)
+    new-where
 
     :else
-    pre-form))
+    (error "Compilation failed")))
 
 
 ;; TODO: validate arguments of constructor
@@ -602,7 +630,7 @@
   (string/join ", " (map node->str (sort s))))
 
 
-;;; BORK
+;; TODO: refactor
 (defn formula->latex
   "'Compile' a formula to a valid LaTeX math string."
   [formula]
@@ -620,8 +648,8 @@
             (formula->latex (:numer formula))
             (formula->latex (:denom formula)))
 
-    ;; This is a hack; TODO: fix id so it doesn't return empty :given sets
-    (and (:given formula) (not (empty? (:given formula))))
+    ;; refactor?
+    (not (empty? (:given formula)))
     (format "P(%s \\mid %s)"
             (set->str (:p formula))
             (set->str (:given formula)))
@@ -658,7 +686,7 @@
   Formula
   (to-mime [this]
     (mc/stream-to-string
-      {:text/latex (str "$$" (trim-brackets (formula->latex this)) "$$")})))
+      {:text/latex (str "$$" (formula->latex this) "$$")})))
 
 
 (extend-protocol mc/PMimeConvertible
