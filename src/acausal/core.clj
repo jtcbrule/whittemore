@@ -6,6 +6,10 @@
             [clojure.string :as string]
             [clojupyter.protocol.mime-convertible :as mc]
             [rhizome.viz]
+            [clojure.java.io :as io]
+            [clojure.data.csv :as csv]
+            [clojure.core.matrix :as m]
+            [clojure.core.matrix.dataset :as md]
             ;;[incanter.charts]
             ;;[incanter.core]
             ))
@@ -659,6 +663,74 @@
 
     :else
     (error "Unable to compile to LaTeX")))
+
+
+;; Distribution protocol idea:
+;; support a sample/row function
+;; support a support function
+;; sum over?
+
+(defn read-csv-dataset
+    "Reads CSV-data into a core.matrix dataset"
+    [filename]
+    (with-open [reader (io/reader filename)]
+        (let [data (csv/read-csv reader)]
+            (md/dataset (map keyword (first data)) (rest data)))))
+
+(def data (read-csv-dataset "kidney.csv"))
+
+(def prob {:p #{:success} :given #{:treatment}})
+(def assignments {:success "yes" :treatment "surgery"})
+
+(comment
+
+(eval-prob (md/row-maps data)
+           {:p #{:success} :given #{:treatment}}
+           {:success "yes" :treatment "surgery"})
+
+
+(float
+(eval-prob (md/row-maps data)
+           {:p #{:success} :given #{:treatment :size}}
+           {:success "yes" :treatment "surgery" :size "small"}))
+
+)
+
+
+
+;; TODO: refactor
+(defn eval-prob
+  ""
+  [rows prob assignments]
+  (loop [samples rows, matching 0, total 0]
+    (cond
+      (nil? (first samples))
+      (/ matching total)
+
+      ; :given doesn't match? skip
+      (not= (select-keys (first samples) (:given prob))
+            (select-keys assignments (:given prob)))
+      (recur (rest samples) matching total)
+      
+      ; doesn't match the :p? increase total, but continue
+      (not= (select-keys (first samples) (:p prob))
+            (select-keys assignments (:p prob)))
+      (recur (rest samples) matching (inc total))
+
+      ; matches all? inc matching and total
+      :else
+      (recur (rest samples) (inc matching) (inc total)))))
+
+
+;; TODO: turn this into a protocol?
+;; explicit strategy argument?
+(defn eval-distribution
+  [distribution formula assignments]
+  (cond
+    :else
+    nil))
+
+
 
 
 ;; Jupyter integration
