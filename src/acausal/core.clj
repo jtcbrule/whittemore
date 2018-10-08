@@ -669,6 +669,7 @@
 ;; support a sample/row function
 ;; support a support function
 ;; sum over?
+;; TODO: how to supply 'support' information?
 
 (defn read-csv-dataset
     "Reads CSV-data into a core.matrix dataset"
@@ -677,28 +678,17 @@
         (let [data (csv/read-csv reader)]
             (md/dataset (map keyword (first data)) (rest data)))))
 
-(def data (read-csv-dataset "kidney.csv"))
-
-(def prob {:p #{:success} :given #{:treatment}})
-(def assignments {:success "yes" :treatment "surgery"})
-
-(comment
-
-(eval-prob (md/row-maps data)
-           {:p #{:success} :given #{:treatment}}
-           {:success "yes" :treatment "surgery"})
-
-
-(float
-(eval-prob (md/row-maps data)
-           {:p #{:success} :given #{:treatment :size}}
-           {:success "yes" :treatment "surgery" :size "small"}))
-
-)
+(def data (assoc (read-csv-dataset "kidney.csv")
+                 :support {:success ["yes" "no"]
+                           :treatment ["surgery" "nephrolithotomy"]
+                           :size ["small" "large"]}))
 
 
 
-;; TODO: refactor
+
+;; TODO: refactor, test
+;; Unify queries and the {:p ...} terms?
+;; broken if there are unbound variables in assignments.
 (defn eval-prob
   ""
   [rows prob assignments]
@@ -722,13 +712,32 @@
       (recur (rest samples) (inc matching) (inc total)))))
 
 
+;; TODO: Fix (is broken)
 ;; TODO: turn this into a protocol?
 ;; explicit strategy argument?
-(defn eval-distribution
+;; broken if assignments leaves variables in formula unbound
+(defn estimate
   [distribution formula assignments]
-  (cond
-    :else
-    nil))
+  (let [rows (md/row-maps distribution)
+        support (:support distribution)]
+    (cond
+      (:p formula)
+      (eval-prob rows formula assignments)
+
+      (:prod formula)
+      (reduce *
+              (map #(estimate distribution % assignments)
+                   (:prod formula)))
+
+      (:sum formula)
+      (error "Unimplemented")
+      ; instatiation all assignments, send them into the 
+      ; current assignments, recur, add them up
+      ; also, need to support :numer :denom
+      
+      
+      :else
+      (error "Unsupported formula type"))))
 
 
 
