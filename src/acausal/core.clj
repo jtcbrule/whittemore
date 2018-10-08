@@ -10,15 +10,13 @@
             [clojure.data.csv :as csv]
             [clojure.core.matrix :as m]
             [clojure.core.matrix.dataset :as md]
-            ;;[incanter.charts]
-            ;;[incanter.core]
             ))
 
 
 (defmacro error
-  "Throws a RuntimeException."
-  [& more]
-  `(throw (ex-info (str ~@more) {})))
+  "Throws a RuntimeException with optional additional data."
+  [msg & keyvals]
+  `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 
 (defn transpose
