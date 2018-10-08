@@ -19,6 +19,7 @@
   `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 
+;; TODO: move to acausal/graph.clj ?
 (defn transpose
   "Returns the transpose of directed graph g.
   Graphs are assumed to be of the form {nodes #{nodes}}."
@@ -37,6 +38,7 @@
            {v #{k}})))
 
 
+;; TODO: move to acausal/graph.clj ?
 ;; TODO: improve efficiency?
 (defn pairs-of
   "Returns all pairs of elements of coll as a set of sets."
@@ -49,7 +51,7 @@
 
 
 
-;; TODO: validate arguments of constructor
+;; TODO: validate arguments to constructor
 (defrecord Model [pa bi])
 
 (defn model
@@ -57,12 +59,11 @@
   [dag & confounding]
   (let [bi (apply union (map pairs-of confounding))
         pa (into {} (for [[k v] dag] [k (set v)]))]
-    (Model. pa bi)))
+    (->Model pa bi)))
 
 
 (defmacro defmodel
-  "Define a model, as with (def ...), but return the value of the model.
-  Useful for notebook usage."
+  "Define a model, as with (def ...), but return the value of the model."
   [name docstring? & args]
   (if (string? docstring?)
     `(do
@@ -76,6 +77,8 @@
            ~docstring? ~@args))
        ~name)))
 
+
+;;; Model visualization
 
 ;; TODO: refactor (currently a hack for the rhizome visualization)
 (defrecord Latent [ch])
@@ -150,7 +153,6 @@
 
 
 ;; TODO: refactor
-
 (defn hedge->descriptor
   "Graphviz options for nodes."
   [hedgeset node]
@@ -187,8 +189,8 @@
       :edge->descriptor edge->descriptor
       :node->descriptor (partial hedge->descriptor (:s h)))))
 
-;;;
 
+;;; Model operators
 
 (defn parents
   "Returns Pa(x)_m
@@ -355,11 +357,12 @@
       before)))
 
 
-;; TODO: refactor design of formulas
-;; Currently, formulas can be:
+
+;; A formula is a recursive type of:
 ;; :prod #{formulas}
 ;; :sum formula, :sub #{vars}
-;; :p #{vars}, :given #{vars} | nil, :where formula | nil
+;; :numer formula, :denom formula
+;; :p #{vars}, :given #{vars}
 (defrecord Formula [])
 
 ;; hedge structure
@@ -372,7 +375,7 @@
 (defn formula?
   "Returns true iff f is a Formula."
   [f]
-  (instance? acausal.core.Formula f ))
+  (instance? acausal.core.Formula f))
 
 
 (defn sum
@@ -391,6 +394,69 @@
       (first exprs)
       {:prod exprs})))
 
+
+(defn fail [g s]
+  {:hedge [g s]})
+
+
+(defn free
+  "Returns the set of free variables in formula."
+  [form]
+  (cond
+    (:where form)
+    (error "Unsupported")
+
+    (:given form)
+    (union (:given form) (:p form))
+
+    (:p form)
+    (:p form)
+
+    (:prod form)
+    (apply union (map free (:prod form)))
+
+    (:sum form)
+    (difference (free (:sum form)) (:sub form))
+
+    (:numer form)
+    (union (free (:numer form)) (free (:denom form)))
+    
+    :else
+    (error "free preconditions failed")))
+
+
+;; TODO: refactor
+(defn compile-formula
+  "Returns a valid formula, given a pre-formula, i.e. result of (id ...)"
+  [pre-form]
+  (b/cond
+    (:sum pre-form)
+    {:sum (compile-formula (:sum pre-form)) :sub (:sub pre-form)}
+
+    (:prod pre-form)
+    {:prod (set (map compile-formula (:prod pre-form)))}
+
+    (nil? (:where pre-form))
+    pre-form
+
+    :let [old-where (compile-formula (:where pre-form))
+          current-free (if (:given pre-form)
+                         (union (:p pre-form) (:given pre-form))
+                         (:p pre-form))
+          unbound (difference (free old-where) current-free)
+          new-where (sum unbound old-where)]
+
+    (:given pre-form)
+    {:numer new-where
+     :denom (sum (:p pre-form) new-where)}
+
+    (:p pre-form)
+    new-where
+
+    :else
+    (error "Compilation failed")))
+
+
 (defn given-pi
   "Returns P(vi \\mid v_{pi}^(i-1))"
   [p vi pi]
@@ -399,8 +465,6 @@
       {:p #{vi} :where p}
       {:p #{vi} :given pred :where p})))
 
-(defn fail [g s]
-  {:hedge [g s]})
 
 
 ;;  old line 2
@@ -492,63 +556,10 @@
     nil))
 
 
-(defn free
-  "Returns the set of free variables in formula."
-  [form]
-  (cond
-    (:where form)
-    (error "Unsupported")
-
-    (:given form)
-    (union (:given form) (:p form))
-
-    (:p form)
-    (:p form)
-
-    (:prod form)
-    (apply union (map free (:prod form)))
-
-    (:sum form)
-    (difference (free (:sum form)) (:sub form))
-
-    (:numer form)
-    (union (free (:numer form)) (free (:denom form)))
-    
-    :else
-    (error "free preconditions failed")))
 
 
 
-;; TODO: refactor
-(defn compile-formula
-  "Returns a valid formula, given a pre-formula, i.e. result of (id ...)"
-  [pre-form]
-  (b/cond
-    (:sum pre-form)
-    {:sum (compile-formula (:sum pre-form)) :sub (:sub pre-form)}
 
-    (:prod pre-form)
-    {:prod (set (map compile-formula (:prod pre-form)))}
-
-    (nil? (:where pre-form))
-    pre-form
-
-    :let [old-where (compile-formula (:where pre-form))
-          current-free (if (:given pre-form)
-                         (union (:p pre-form) (:given pre-form))
-                         (:p pre-form))
-          unbound (difference (free old-where) current-free)
-          new-where (sum unbound old-where)]
-
-    (:given pre-form)
-    {:numer new-where
-     :denom (sum (:p pre-form) new-where)}
-
-    (:p pre-form)
-    new-where
-
-    :else
-    (error "Compilation failed")))
 
 
 ;; TODO: validate arguments of constructor
@@ -596,7 +607,7 @@
      (if-let [hedge (extract-hedge pre-form)]
        (apply ->Hedge hedge)
        (into (->Formula)
-             (compile-formula pre-form)))))
+             (compile-formula pre-form))))) ;; remove compile-formula
   ([m q d]
    (if (and (= (:joint d) (verticies m))
             (empty? (:surrogate d)))
@@ -632,7 +643,7 @@
   (string/join ", " (map node->str (sort s))))
 
 
-;; TODO: refactor
+;; TODO: refactor (especially the :given)
 (defn formula->latex
   "'Compile' a formula to a valid LaTeX math string."
   [formula]
