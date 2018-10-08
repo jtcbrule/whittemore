@@ -2,7 +2,10 @@
   (:require [acausal.core :as a
              :refer [verticies transpose pairs-of
                      model q identifiable?
-                     view-model]]))
+                     view-model]
+            ;[incanter.core]
+            ;[incanter.charts]
+             ]))
 
 
 (defn gen-nodes
