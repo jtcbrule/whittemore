@@ -1,16 +1,14 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
-  (:require [better-cond.core :as b]
-            [clojure.pprint :refer [pprint]]
+  (:require [acausal.viz :as viz]
+            [better-cond.core :as b]
+            [clojupyter.protocol.mime-convertible :as mc]
+            [clojure.core.matrix.dataset :refer [row-maps dataset]]
+            [clojure.data.csv :as csv]
+            [clojure.java.io :as io]
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
-            [clojupyter.protocol.mime-convertible :as mc]
-            [rhizome.viz]
-            [clojure.java.io :as io]
-            [clojure.data.csv :as csv]
-            [clojure.core.matrix :as m]
-            [clojure.core.matrix.dataset :as md]
-            ))
+            [clojure.pprint :refer [pprint]]))
 
 
 (defmacro error
@@ -19,27 +17,7 @@
   `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 
-;; TODO: move to acausal/graph.clj ?
-(defn transpose
-  "Returns the transpose of directed graph g.
-  Graphs are assumed to be of the form {nodes #{nodes}}."
-  [g]
-  (apply merge-with
-         into
-
-         ; key -> #{}
-         (into {}
-               (for [k (keys g)]
-                 {k #{}}))
-
-         ; val -> #{key}
-         (for [k (keys g)
-               v (get g k)]
-           {v #{k}})))
-
-
-;; TODO: move to acausal/graph.clj ?
-;; TODO: improve efficiency?
+;; OPTIMIZE (currently creates two copies of every pair)
 (defn pairs-of
   "Returns all pairs of elements of coll as a set of sets."
   [coll]
@@ -48,7 +26,6 @@
           j coll
           :when (not= i j)]
       #{i j})))
-
 
 
 ;; TODO: validate arguments to constructor
@@ -73,124 +50,9 @@
        ~name)
     `(do
        (def ~name
-         (model
-           ~docstring? ~@args))
+         (model ~docstring? ~@args))
        ~name)))
 
-
-;;; Model visualization
-
-;; TODO: refactor (currently a hack for the rhizome visualization)
-(defrecord Latent [ch])
-
-(defn latent?
-  "Returns true iff node is Latent."
-  [node]
-  (instance? acausal.core.Latent node))
-
-
-(defn format-keyword
-  "Returns a html subscripted string, given an appropriate keyword."
-  [kword]
-  (let [s (string/split (name kword) #"_")]
-    (if (= (count s) 2)
-      (str "<" (first s) "<SUB>" (second s) "</SUB>" ">")
-      (name kword))))
- 
-
-(defn node->descriptor
-  "Graphviz options for nodes."
-  [node]
-  (if (latent? node)
-    {:label "", :shape "none", :width 0, :height 0}
-    {:label (if (keyword? node) (name node) (str node))}))
-
-
-(defn edge->descriptor
-  "Graphviz options for edges."
-  [i j]
-  (if (latent? i)
-    {:style "dotted" :arrowhead "empty"}
-    {}))
-
-
-(defn rhizome-graph
-  "Returns a 'rhizome graph', given model m"
-  [m]
-  (into (transpose (:pa m))
-        (for [multiedge (:bi m)]
-          {(Latent. multiedge) multiedge})))
-
-
-(def rhizome-options
-  [:vertical? true
-   :node->descriptor node->descriptor
-   :edge->descriptor edge->descriptor])
-
-
-;; TODO: refactor
-;; A better design could incorporate 'native' bidirected edges, with
-;; constraint=false, but rhizome doesn't support a clean way to do this.
-;; Consider switching to Dorothy or Tangle.
-(defn view-model
-  "Rhizome visualization of model m."
-  [m]
-  (let [children (rhizome-graph m)]
-    (apply rhizome.viz/view-graph
-           (keys children)
-           children
-           rhizome-options)))
-
-
-(defn model->svg
-  "Returns m as an svg graphic."
-  [m]
-  (let [children (rhizome-graph m)]
-    (apply rhizome.viz/graph->svg
-           (keys children)
-           children
-           rhizome-options)))
-
-
-;; TODO: refactor
-(defn hedge->descriptor
-  "Graphviz options for nodes."
-  [hedgeset node]
-  (cond
-    (latent? node)
-    {:label "", :shape "none", :width 0, :height 0}
-
-    (contains? hedgeset node)
-    {:label (if (keyword? node) (name node) (str node))
-     :color "red"}
-
-    :else
-    {:label (if (keyword? node) (name node) (str node))}))
-
-
-(defn view-hedge
-  [h]
-  (let [children (rhizome-graph (:g h))]
-    (rhizome.viz/view-graph
-      (keys children)
-      children
-      :vertical? true
-      :edge->descriptor edge->descriptor
-      :node->descriptor (partial hedge->descriptor (:s h)))))
-
-(defn hedge->svg
-  [h]
-  (let [children (rhizome-graph (:g h))]
-    (rhizome.viz/graph->svg
-      (keys children)
-      children
-      :options {:label "FAIL" :labelloc "t"}
-      :vertical? true
-      :edge->descriptor edge->descriptor
-      :node->descriptor (partial hedge->descriptor (:s h)))))
-
-
-;;; Model operators
 
 (defn parents
   "Returns Pa(x)_m
@@ -213,8 +75,8 @@
            (union visited frontier)))))
 
 
-(defn verticies
-  "Returns ver(m), i.e. the verticies of model m."
+(defn vertices
+  "Returns ver(m), i.e. the vertices of model m."
   [m]
   (set (keys (:pa m))))
 
@@ -227,8 +89,7 @@
     (into g new-kv)))
 
 
-;; TODO: improve efficiency?
-;; Consider using transients: https://clojuredocs.org/clojure.core/disj%21
+;; OPTIMIZE (use transients to improve performance?)
 (defn pair-cut
   "Returns a new set of pairs (sets) such that all pairs that contained an
   element in x have been removed."
@@ -245,26 +106,24 @@
   [m x]
   (let [pa (graph-cut (:pa m) x)
         bi (pair-cut (:bi m) x)]
-    (Model. pa bi)))
+    (->Model pa bi)))
 
 
-;; TODO: analyze efficiency
 (defn subgraph
   "Returns G_{x}
-  i.e. a model containing only the verticies in (set) x and edges between those
-  verticies, including the bidirected edges."
+  i.e. a model containing only the vertices in set x and edges between those
+  vertices, including the bidirected edges."
   [m x]
-  (let [to-remove (difference (verticies m) x)
+  (let [to-remove (difference (vertices m) x)
         bi (pair-cut (:bi m) to-remove)
         pa (into {}
                  (for [[k v] (:pa m)
                        :when (contains? x k)]
                    [k (intersection v x)]))]
-    (Model. pa bi)))
+    (->Model pa bi)))
 
 
 
-;; TODO: make private?
 (defn adjacent
   "Returns the nodes adjacent to node (via the bidirected edges in pairs)."
   [pairs node]
@@ -273,7 +132,6 @@
         node))
 
 
-;; TODO: make private?
 (defn connected-component
   "Returns the c-component of node."
   [pairs node]
@@ -291,11 +149,10 @@
                  (conj visited current)))))))
 
 
-;; TODO: analyze efficiency; test more
 (defn c-components
-  "Returns the confounded components of m as a set of sets of verticies."
+  "Returns the confounded components of m as a set of sets of vertices."
   [m]
-  (loop [nodes (verticies m)
+  (loop [nodes (vertices m)
          components #{}]
     (if (empty? nodes)
       components
@@ -303,6 +160,7 @@
             current-component (connected-component (:bi m) current-node)]
         (recur (difference nodes current-component)
                (conj components current-component))))))
+
 
 
 (defn find-superset
@@ -321,7 +179,6 @@
             (keys g))))
 
 
-;; TODO: make private?
 (defn kahn-cut
   "Returns a dag g where all edges to and from x have been removed."
   [g x]
@@ -331,9 +188,9 @@
           [k (difference v x)])))
 
 
-;; TODO: make more efficienct
+;; OPTIMIZE (kahn-cut generates a new graph each time it is called)
 (defn topological-sort
-  "Returns a topological sort of verticies in model m.
+  "Returns a topological sort of vertices in model m.
   Ties are broken by (sort ...); this ensures a unique sort."
   [m]
   (loop [remaining (:pa m)
@@ -358,18 +215,18 @@
 
 
 
+;; TODO: require :given #{vars} to be non-empty?
 ;; A formula is a recursive type of:
 ;; :prod #{formulas}
 ;; :sum formula, :sub #{vars}
 ;; :numer formula, :denom formula
 ;; :p #{vars}, :given #{vars}
 ;; :p #{vars}
-;; TODO: allow :p with no :given ?
 (defrecord Formula [])
 
 ;; hedge structure
 ;; g is a model that is a c-component
-;; s is a subset of verticies such that G, G \intersect S is a hedge
+;; s is a subset of vertices such that G, G \intersect S is a hedge
 ;; TODO: Hedges should be renderable (highlight the subset?)
 (defrecord Hedge [g s])
 
@@ -380,7 +237,7 @@
   (instance? acausal.core.Formula f))
 
 
-;; TODO: optimizations (remove redundant :sum s)
+;; TODO: optimizations (collapse nested sums)
 (defn sum
   "Returns \\sum_{sub} p"
   [sub p]
@@ -404,7 +261,6 @@
   {:hedge [g s]})
 
 
-;; TODO: refactor? (:given ...)
 (defn free
   "Returns the set of free variables in formula."
   [form]
@@ -443,15 +299,13 @@
      :denom denom}))
 
 
-;; TODO: finish refactor
-;; NOTE: assumed to be called with p = {:p (verticies g)}
-;; NOTE: keeps :hedges inline
-;; TODO: verify line 7
 (defn id
-  "Shpitser's ID algorithm."
+  "Shpitser's ID algorithm. Call with p = {:p (vertices g)}.
+  
+  Returns a formula, with any hedges inline."
   [y x p g]
   (b/cond
-    :let [v (verticies g)]
+    :let [v (vertices g)]
     
     ;line 1
     (empty? x)
@@ -507,8 +361,6 @@
     (error "ID preconditions failed")))
 
 
-;; TODO: rename?
-;; TODO: fix
 (defn extract-hedges
   "Walk the formula and return the set of hedges it refers to."
   [form]
@@ -534,8 +386,7 @@
     (error "Unsupported formula type")))
 
 
-;; TODO: refactor?
-;; planend keys are :p, :do, :given
+
 (defrecord Query [p do given])
 
 (defn query
@@ -549,20 +400,14 @@
   query)
 
 
-;; TODO: validate arguments of constructor
-;; TODO: rename arguments of constructor (joint surrogate)?
-;; TODO: add explicit i-map argument?
-;; TODO: remove explicit surrogate constructor?
-;; TODO: rename vars to joint
 (defrecord Data [joint surrogate])
 
 (defn data
   "Returns a representation of the known joint probability function.
   i.e. P(v | do(z')) \\forall z' \\subseteq z"
   [v & {:keys [do*] :or {do* []}}]
-  (Data. (set v) (set do*)))
+  (->Data (set v) (set do*)))
 
-;; TODO: remove alias?
 (def p
   "Alias for acausal.core/data"
   data)
@@ -574,13 +419,13 @@
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v)."
   ([m q]
-   (let [form (id (:p q) (:do q) {:p (verticies m)} m)
+   (let [form (id (:p q) (:do q) {:p (vertices m)} m)
          hedges (extract-hedges form)]
      (if (empty? hedges)
        (into (->Formula) form)
        (first hedges))))
   ([m q d]
-   (if (and (= (:joint d) (verticies m))
+   (if (and (= (:joint d) (vertices m))
             (empty? (:surrogate d)))
      (identify m q)
      (error "Unimplemented"))))
@@ -657,7 +502,7 @@
     [filename]
     (with-open [reader (io/reader filename)]
         (let [data (csv/read-csv reader)]
-            (md/dataset (map keyword (first data)) (rest data)))))
+            (dataset (map keyword (first data)) (rest data)))))
 
 (def data (assoc (read-csv-dataset "kidney.csv")
                  :support {:success ["yes" "no"]
@@ -697,7 +542,7 @@
 ;; broken if assignments leaves variables in formula unbound
 (defn estimate
   [distribution formula assignments]
-  (let [rows (md/row-maps distribution)
+  (let [rows (row-maps distribution)
         support (:support distribution)]
     (cond
       (:p formula)
@@ -730,7 +575,7 @@
   Model
   (to-mime [this]
     (mc/stream-to-string
-      {:image/svg+xml (model->svg this)})))
+      {:image/svg+xml (viz/model->svg this)})))
 
 
 ;; TODO: fix this hack
@@ -753,7 +598,7 @@
   Hedge
   (to-mime [this]
     (mc/stream-to-string
-      {:image/svg+xml (hedge->svg this)})))
+      {:image/svg+xml (viz/hedge->svg this)})))
 
 
 
@@ -976,7 +821,7 @@
 
 (topological-sort ident-g)
 
-(id #{:y} #{:x} {:p (verticies ident-a)} ident-a)
+(id #{:y} #{:x} {:p (vertices ident-a)} ident-a)
 
 (identify ident-a (q [:y] :do [:x]))
 (identify ident-b (q [:y] :do [:x]))

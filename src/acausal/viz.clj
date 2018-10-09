@@ -1,139 +1,134 @@
 (ns acausal.viz
-  (:require [clojure.string]
-            [rhizome.viz]
-            [clojupyter.protocol.mime-convertible :as mc]))
+  (:require [clojure.string :as string]
+            [rhizome.viz]))
 
 
-(extend-protocol mc/PMimeConvertible
-  Formula
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (:s this) "$")})))
+;; TODO: refactor rhizome/graphviz code
 
 
-(deftype SVG [s]
+(defn transpose
+  "Returns the transpose of directed graph g.
+  Graphs are assumed to be of the form {nodes #{nodes}}."
+  [g]
+  (apply merge-with
+         into
 
-  mc/PMimeConvertible
-  (to-mime [_]
-    (mc/stream-to-string
-      {:image/svg+xml s})))
+         ; key -> #{}
+         (into {}
+               (for [k (keys g)]
+                 {k #{}}))
+
+         ; val -> #{key}
+         (for [k (keys g)
+               v (get g k)]
+           {v #{k}})))
+
+
+(defn format-keyword
+  "Returns an html subscripted string, given a keyword with single underscore."
+  [kword]
+  (let [s (string/split (name kword) #"_")]
+    (if (= (count s) 2)
+      (str "<" (first s) "<SUB>" (second s) "</SUB>" ">")
+      (name kword))))
+
+
+(defrecord Latent [ch])
+
+(defn latent?
+  "Returns true iff node is Latent."
+  [node]
+  (instance? Latent node))
+
+
+(defn node->descriptor
+  "Graphviz options for nodes."
+  [node]
+  (if (latent? node)
+    {:label "", :shape "none", :width 0, :height 0}
+    {:label (if (keyword? node) (name node) (str node))}))
+
+
+(defn edge->descriptor
+  "Graphviz options for edges."
+  [i j]
+  (if (latent? i)
+    {:style "dotted" :arrowhead "empty"}
+    {}))
+
+
+(def model-options 
+  [:vertical? true
+   :node->descriptor node->descriptor
+   :edge->descriptor edge->descriptor])
+
+
+(defn rhizome-graph
+  "Returns a graph to be rendered by rhizome, given model m."
+  [m]
+  (into (transpose (:pa m))
+        (for [multiedge (:bi m)]
+          {(->Latent multiedge) multiedge})))
+
+
+(defn view-model
+  "Rhizome visualization of model m."
+  [m]
+  (let [g (rhizome-graph m)]
+    (apply rhizome.viz/view-graph
+           (keys g)
+           g
+           model-options)))
 
 
 (defn model->svg
-  "Model m as SVG
-  TODO: refactor dot and rendering steps, better label formatting"
+  "Returns m as an svg graphic."
   [m]
-  (SVG.
-    (rhizome.viz/graph->svg
-      (keys (:children m))
-      (:children m)
-      :vertical? false
-      :node->descriptor (fn [n]
-                          (if (contains? (:latents m) n)
-                            {:label "", :shape "none", :width 0, :height 0}
-                            {:label (name n)})) ; :shape "circle"
-      :edge->descriptor (fn [i j]
-                          (if (contains? (:latents m) i)
-                            {:style "dotted"}
-                            {})))))
+  (let [g (rhizome-graph m)]
+    (apply rhizome.viz/graph->svg
+           (keys g)
+           g
+           model-options)))
 
 
+(defn hedge->descriptor
+  "Graphviz options for hedge nodes."
+  [s node]
+  (cond
+    (latent? node)
+    {:label "", :shape "none", :width 0, :height 0}
 
-;; LaTeX rendering
+    (contains? s node)
+    {:label (if (keyword? node) (name node) (str node))
+     :color "red"}
 
-(defrecord Latex [math])
-
-
-(extend-protocol mc/PMimeConvertible
-  Latex
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (:math this) "$")})))
-
-
-;; TODO: figure out how to distinguish information sets from queries
-(defn query->latex
-  "Query as latex
-   TODO: fix broken string stuff"
-  [q]
-  (Latex. (str
-            "P("
-
-            (clojure.string/join ", " (map name (:effect q)))
-
-            " \\mid "
-            
-            "do("
-            (clojure.string/join ", " (map name (:do q)))
-
-            ")"
-
-            (if (empty? (:given q))
-              ""
-              (str ", " (clojure.string/join ", " (map name (:given q)))))
-
-            ")")))
+    :else
+    {:label (if (keyword? node) (name node) (str node))}))
 
 
-(defn data->latex
-  "Query as latex
-   TODO: Fix broken"
-  [d]
-  (Latex.
-    (str
-      "P("
-
-      (clojure.string/join ", " (map name (:vars d)))
-      
-      " \\mid "
-      "do^*("
-      (clojure.string/join ", " (map name (:surrogate d)))
-      ")"
-
-      ")")))
-
-;; For use outside Jupyter
-
-(defn view-model
-  "View model m
-  TODO: refactor dot and rendering steps, better label formatting"
-  [m]
-  (rhizome.viz/view-graph
-    (keys (:children m))
-    (:children m)
-    :vertical? false
-    :node->descriptor (fn [n]
-                        (if (contains? (:latents m) n)
-                          {:label "", :shape "none", :width 0, :height 0}
-                          {:label (name n)})) ; :shape "circle"
-    :edge->descriptor (fn [i j]
-                        (if (contains? (:latents m) i)
-                          {:style "dotted"}
-                          {}))))
+(defn hedge-options
+  [h]
+  [:options {:label "Hedge" :labelloc "t"}
+   :vertical? true
+   :edge->descriptor edge->descriptor
+   :node->descriptor (partial hedge->descriptor (:s h))])
 
 
+(defn view-hedge
+  [h]
+  (let [g (rhizome-graph (:g h))]
+    (apply rhizome.viz/view-graph
+           (keys g)
+           g
+           (hedge-options h))))
 
 
-(defn latex [math-string]
-  (Latex. math-string))
+(defn hedge->svg
+  [h]
+  (let [g (rhizome-graph (:g h))]
+    (apply rhizome.viz/graph->svg
+           (keys g)
+           g
+           (hedge-options h))))
 
-
-
-;; Note that it's possible to seperate jupyter code from core
-;; TODO: importing acausal.jupyter should auto-pretty print models, queries, etc
-;; e.g. acausal.viz
-
-(comment
-
-(ns acausal.viz
-  (:require [acausal.core]
-    [clojupyter.protocol.mime-convertible :as mc]))
-
-(extend-protocol mc/PMimeConvertible
-  acausal.core.Latex
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/latex (str "$" (:s this) "$")})))
-                         
-)
 
