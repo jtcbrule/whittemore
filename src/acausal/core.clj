@@ -363,6 +363,8 @@
 ;; :sum formula, :sub #{vars}
 ;; :numer formula, :denom formula
 ;; :p #{vars}, :given #{vars}
+;; :p #{vars}
+;; TODO: allow :p with no :given ?
 (defrecord Formula [])
 
 ;; hedge structure
@@ -378,6 +380,7 @@
   (instance? acausal.core.Formula f))
 
 
+;; TODO: optimizations (remove redundant :sum s)
 (defn sum
   "Returns \\sum_{sub} p"
   [sub p]
@@ -385,6 +388,8 @@
     p
     {:sub sub :sum p}))
 
+
+;; TODO: optimizations
 (defn product
   "Returns \\prod_i p_i.
   coll is a collection of probability functions."
@@ -399,13 +404,11 @@
   {:hedge [g s]})
 
 
+;; TODO: refactor? (:given ...)
 (defn free
   "Returns the set of free variables in formula."
   [form]
   (cond
-    (:where form)
-    (error "Unsupported")
-
     (:given form)
     (union (:given form) (:p form))
 
@@ -422,57 +425,27 @@
     (union (free (:numer form)) (free (:denom form)))
     
     :else
-    (error "free preconditions failed")))
+    (error "(free ...) preconditions failed")))
 
 
-;; TODO: refactor
-(defn compile-formula
-  "Returns a valid formula, given a pre-formula, i.e. result of (id ...)"
-  [pre-form]
-  (b/cond
-    (:sum pre-form)
-    {:sum (compile-formula (:sum pre-form)) :sub (:sub pre-form)}
-
-    (:prod pre-form)
-    {:prod (set (map compile-formula (:prod pre-form)))}
-
-    (nil? (:where pre-form))
-    pre-form
-
-    :let [old-where (compile-formula (:where pre-form))
-          current-free (if (:given pre-form)
-                         (union (:p pre-form) (:given pre-form))
-                         (:p pre-form))
-          unbound (difference (free old-where) current-free)
-          new-where (sum unbound old-where)]
-
-    (:given pre-form)
-    {:numer new-where
-     :denom (sum (:p pre-form) new-where)}
-
-    (:p pre-form)
-    new-where
-
-    :else
-    (error "Compilation failed")))
-
-
+;; TODO: refactor, opportunity for optimizations
+;; Note: this is intricate, because we're calculating P(vi \\mid pi)
+;; in terms of the probability distribution p
 (defn given-pi
-  "Returns P(vi \\mid v_{pi}^(i-1))"
+  "Returns P(vi \\mid v_{pi}^(i-1))
+  pi is a topological order of nodes in G"
   [p vi pi]
-  (let [pred (predecessors pi vi)]
-    (if (empty? pred)
-      {:p #{vi} :where p}
-      {:p #{vi} :given pred :where p})))
+  (let [pred (predecessors pi vi)
+        unbound (difference (free p) (conj pred vi))
+        numer (sum unbound p)
+        denom (sum #{vi} numer)]
+    {:numer numer
+     :denom denom}))
 
 
-
-;;  old line 2
-;; {:p an-y :where (marginalize p (difference v an-y))}
-
-;; NOTE: returns a 'pre-formula'
+;; TODO: finish refactor
 ;; NOTE: assumed to be called with p = {:p (verticies g)}
-;; TODO: set single topological ordering?
+;; NOTE: keeps :hedges inline
 ;; TODO: verify line 7
 (defn id
   "Shpitser's ID algorithm."
@@ -519,7 +492,7 @@
            (for [vi s]
              (given-pi p vi pi))))
 
-    ;line 7 ?
+    ;line 7
     :let [s-prime (find-superset c s)
           p-prime (product
                     (for [vi s-prime]
@@ -535,44 +508,42 @@
 
 
 ;; TODO: rename?
-(defn extract-hedge
-  "Walk the pre-formula and return the (first) hedge as [g s].
-  Returns nil if no hedge exists."
-  [pre-form]
+;; TODO: fix
+(defn extract-hedges
+  "Walk the formula and return the set of hedges it refers to."
+  [form]
   (cond
-    (:hedge pre-form)
-    (:hedge pre-form)
+    (:hedge form)
+    (hash-set (apply ->Hedge (:hedge form)))
 
-    (:sum pre-form)
-    (extract-hedge (:sum pre-form))
+    (:sum form)
+    (extract-hedges (:sum form))
 
-    (:where pre-form)
-    (extract-hedge (:where pre-form))
+    (:prod form)
+    (reduce union (map extract-hedges (:prod form)))
 
-    (:prod pre-form)
-    (first (remove nil? (map extract-hedge (:prod pre-form))))
+    (:numer form)
+    (union
+      (extract-hedges (:numer form))
+      (extract-hedges (:denom form)))
+
+    (:p form)
+    #{}
 
     :else
-    nil))
+    (error "Unsupported formula type")))
 
 
-
-
-
-
-
-
-;; TODO: validate arguments of constructor
-;; TODO: rename arguments of constructor?
-(defrecord Query [effect do])
+;; TODO: refactor?
+;; planend keys are :p, :do, :given
+(defrecord Query [p do given])
 
 (defn query
   "Returns a representation of the causal effect query.
   e.g. (query [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
-  [effect & {:keys [do] :or {do []}}]
-  (Query. (set effect) (set do)))
+  [effect & {:keys [do given] :or {do [] given []}}]
+  (->Query (set effect) (set do) (set given)))
 
-;; TODO: remove alias?
 (def q
   "Alias for acausal.core/query."
   query)
@@ -597,17 +568,17 @@
   data)
 
 
-;; TODO: properly implement (identify m q d)
+;; TODO: implement (identify m q d)
 ;; NOTE returns either a Formula or a Hedge
 (defn identify
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v)."
   ([m q]
-   (let [pre-form (id (:effect q) (:do q) {:p (verticies m)} m)]
-     (if-let [hedge (extract-hedge pre-form)]
-       (apply ->Hedge hedge)
-       (into (->Formula)
-             (compile-formula pre-form))))) ;; remove compile-formula
+   (let [form (id (:p q) (:do q) {:p (verticies m)} m)
+         hedges (extract-hedges form)]
+     (if (empty? hedges)
+       (into (->Formula) form)
+       (first hedges))))
   ([m q d]
    (if (and (= (:joint d) (verticies m))
             (empty? (:surrogate d)))
@@ -615,15 +586,16 @@
      (error "Unimplemented"))))
 
 
-;; TODO: cleanup
 (defn identifiable?
   "True iff q is identifiable in m from P(v)"
   ([m q]
-   (if (extract-hedge (id (:effect q) (:do q) {:p (verticies m)} m))
-     false
-     true))
+   (if (formula? (identify m q))
+     true
+     false))
   ([m q d]
-   (error "Unimplemented")))
+   (if (formula? (identify m q d))
+     true
+     false)))
 
 
 ;; TODO: improve
@@ -691,8 +663,6 @@
                  :support {:success ["yes" "no"]
                            :treatment ["surgery" "nephrolithotomy"]
                            :size ["small" "large"]}))
-
-
 
 
 ;; TODO: refactor, test
@@ -1005,6 +975,8 @@
 (view-model ident-g)
 
 (topological-sort ident-g)
+
+(id #{:y} #{:x} {:p (verticies ident-a)} ident-a)
 
 (identify ident-a (q [:y] :do [:x]))
 (identify ident-b (q [:y] :do [:x]))
