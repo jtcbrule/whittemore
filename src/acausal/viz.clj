@@ -131,4 +131,3 @@
            g
            (hedge-options h))))
 
-

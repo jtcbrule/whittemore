@@ -32,7 +32,7 @@
 (defrecord Model [pa bi])
 
 (defn model
-  "Returns a new model from dag with confounding."
+  "Returns a new causal diagram."
   [dag & confounding]
   (let [bi (apply union (map pairs-of confounding))
         pa (into {} (for [[k v] dag] [k (set v)]))]
@@ -52,6 +52,42 @@
        (def ~name
          (model ~docstring? ~@args))
        ~name)))
+
+
+;; TODO: refactor
+(defn cross-pairs
+  "Returns the cartesian product of coll1 and coll2."
+  [coll1 coll2]
+  (for [i coll1
+        j coll2
+        :when (not= i j)]
+    #{i j}))
+
+
+;; TODO: refactor, check implementation, efficiency (transients?)
+(defn make-latent
+  "Latent project one node"
+  [m x]
+  (let [pa-x (get (:pa m) x)
+        ch-x (set (map first (filter #(contains? (second %) x) (:pa m))))
+        new-pa (into {}
+                     (for [[k v] (:pa m)
+                           :when (not= k x)]
+                       (if (contains? ch-x k)
+                           [k (disj (into v pa-x) x)]
+                           [k v])))
+        bi-remove (set (filter #(contains? % x) (:bi m)))
+        bi-ends (map #(first (disj % x)) bi-remove)
+        bi-add (union (set (cross-pairs bi-ends ch-x))
+                      (pairs-of ch-x)) ;; TODO: correct?
+        new-bi (union (difference (:bi m) bi-remove) bi-add)]
+    (->Model new-pa new-bi)))
+
+
+(defn latent-projection
+  "Latent-project x in m."
+  [m x]
+  (reduce #(make-latent %1 %2) m x))
 
 
 (defn parents
@@ -214,8 +250,6 @@
       before)))
 
 
-
-;; TODO: require :given #{vars} to be non-empty?
 ;; A formula is a recursive type of:
 ;; :prod #{formulas}
 ;; :sum formula, :sub #{vars}
@@ -224,20 +258,22 @@
 ;; :p #{vars}
 (defrecord Formula [])
 
-;; hedge structure
-;; g is a model that is a c-component
-;; s is a subset of vertices such that G, G \intersect S is a hedge
-;; TODO: Hedges should be renderable (highlight the subset?)
-(defrecord Hedge [g s])
-
-
 (defn formula?
   "Returns true iff f is a Formula."
   [f]
-  (instance? acausal.core.Formula f))
+  (instance? Formula f))
 
 
-;; TODO: optimizations (collapse nested sums)
+;; A hedge is composed of
+;; :g - a model that is a c-component
+;; :s - a subset of vertices such that G, G \cap S is a hedge
+(defrecord Hedge [g s])
+
+(defn fail [g s]
+  {:hedge [g s]})
+
+
+;; TODO: optimizations (collapse nested sums, marginalize)
 (defn sum
   "Returns \\sum_{sub} p"
   [sub p]
@@ -246,7 +282,6 @@
     {:sub sub :sum p}))
 
 
-;; TODO: optimizations
 (defn product
   "Returns \\prod_i p_i.
   coll is a collection of probability functions."
@@ -255,10 +290,6 @@
     (if (= (count exprs) 1)
       (first exprs)
       {:prod exprs})))
-
-
-(defn fail [g s]
-  {:hedge [g s]})
 
 
 (defn free
@@ -281,14 +312,12 @@
     (union (free (:numer form)) (free (:denom form)))
     
     :else
-    (error "(free ...) preconditions failed")))
+    (error "free preconditions failed")))
 
 
-;; TODO: refactor, opportunity for optimizations
-;; Note: this is intricate, because we're calculating P(vi \\mid pi)
-;; in terms of the probability distribution p
+;; TODO: optimizations (return probability expressions in terms of :given)
 (defn given-pi
-  "Returns P(vi \\mid v_{pi}^(i-1))
+  "Returns P(vi \\mid v_{pi}^(i-1)), in terms of probability distribution p.
   pi is a topological order of nodes in G"
   [p vi pi]
   (let [pred (predecessors pi vi)
@@ -301,7 +330,6 @@
 
 (defn id
   "Shpitser's ID algorithm. Call with p = {:p (vertices g)}.
-  
   Returns a formula, with any hedges inline."
   [y x p g]
   (b/cond
@@ -362,7 +390,7 @@
 
 
 (defn extract-hedges
-  "Walk the formula and return the set of hedges it refers to."
+  "Walk the formula and return the set of hedges inline."
   [form]
   (cond
     (:hedge form)
@@ -386,7 +414,6 @@
     (error "Unsupported formula type")))
 
 
-
 (defrecord Query [p do given])
 
 (defn query
@@ -398,7 +425,6 @@
 (def q
   "Alias for acausal.core/query."
   query)
-
 
 (defrecord Data [joint surrogate])
 
@@ -414,10 +440,11 @@
 
 
 ;; TODO: implement (identify m q d)
-;; NOTE returns either a Formula or a Hedge
+;; TODO: signature? (return nil on failure? Seprate function for hedges?)
 (defn identify
   "Returns a formula that computes query q from data d in model m.
-  Data defaults to P(v)."
+  Data defaults to P(v). Returns a Hedge if such a formula is guarenteed
+  to not exist. Otherwise, returns nil."
   ([m q]
    (let [form (id (:p q) (:do q) {:p (vertices m)} m)
          hedges (extract-hedges form)]
@@ -443,71 +470,16 @@
      false)))
 
 
-;; TODO: improve
-(defn node->str
-  "..."
-  [n]
-  (let [raw-str (if (keyword? n) (name n) (str n))]
-    (cond
-      (string/includes? raw-str "_") raw-str
-      (= (count raw-str) 1) raw-str
-      :else (format "\\text{%s}" raw-str))))
-
-
-(defn set->str
-  "..."
-  [s]
-  (string/join ", " (map node->str (sort s))))
-
-
-;; TODO: refactor (especially the :given)
-(defn formula->latex
-  "'Compile' a formula to a valid LaTeX math string."
-  [formula]
-  (cond
-    (:sum formula)
-    (format "\\left[ \\sum_{%s} %s \\right]"
-            (set->str (:sub formula))
-            (formula->latex (:sum formula)))
-
-    (:prod formula)
-    (string/join " " (map formula->latex (:prod formula)))
-
-    (:numer formula)
-    (format "\\frac{%s}{%s}"
-            (formula->latex (:numer formula))
-            (formula->latex (:denom formula)))
-
-    ;; refactor?
-    (not (empty? (:given formula)))
-    (format "P(%s \\mid %s)"
-            (set->str (:p formula))
-            (set->str (:given formula)))
-
-    (:p formula)
-    (format "P(%s)" (set->str (:p formula)))
-
-    :else
-    (error "Unable to compile to LaTeX")))
-
-
-;; Distribution protocol idea:
-;; support a sample/row function
-;; support a support function
-;; sum over?
-;; TODO: how to supply 'support' information?
+;; I/O
 
 (defn read-csv-dataset
-    "Reads CSV-data into a core.matrix dataset"
-    [filename]
-    (with-open [reader (io/reader filename)]
-        (let [data (csv/read-csv reader)]
-            (dataset (map keyword (first data)) (rest data)))))
+  "Reads CSV-data into a core.matrix dataset.
+  Assumes that the first row is column names."
+  [filename]
+  (with-open [reader (io/reader filename)]
+    (let [data (csv/read-csv reader)]
+      (dataset (map keyword (first data)) (rest data)))))
 
-(def data (assoc (read-csv-dataset "kidney.csv")
-                 :support {:success ["yes" "no"]
-                           :treatment ["surgery" "nephrolithotomy"]
-                           :size ["small" "large"]}))
 
 
 ;; TODO: refactor, test
@@ -566,25 +538,59 @@
 
 
 
+(defn node->str
+  "Convert a node to a LaTeX string."
+  [n]
+  (let [raw-str (if (keyword? n) (name n) (str n))]
+    (cond
+      (string/includes? raw-str "_") raw-str
+      (= (count raw-str) 1) raw-str
+      :else (format "\\text{%s}" raw-str))))
+
+
+(defn set->str
+  "Convert a set of nodes to a LaTeX string."
+  [s]
+  (string/join ", " (map node->str (sort s))))
+
+
+(defn formula->latex
+  "'Compile' a formula to a valid LaTeX math string."
+  [formula]
+  (cond
+    (:sum formula)
+    (format "\\left[ \\sum_{%s} %s \\right]"
+            (set->str (:sub formula))
+            (formula->latex (:sum formula)))
+
+    (:prod formula)
+    (string/join " " (map formula->latex (:prod formula)))
+
+    (:numer formula)
+    (format "\\frac{%s}{%s}"
+            (formula->latex (:numer formula))
+            (formula->latex (:denom formula)))
+
+    (not (empty? (:given formula)))
+    (format "P(%s \\mid %s)"
+            (set->str (:p formula))
+            (set->str (:given formula)))
+
+    (:p formula)
+    (format "P(%s)" (set->str (:p formula)))
+
+    :else
+    (error "Unable to compile to LaTeX")))
+
+
+
 ;; Jupyter integration
-;; TODO: seperate into new namespace?
-;; TODO: render Query and Data types? (probably not)
-;; TODO: render Hedge
 
 (extend-protocol mc/PMimeConvertible
   Model
   (to-mime [this]
     (mc/stream-to-string
       {:image/svg+xml (viz/model->svg this)})))
-
-
-;; TODO: fix this hack
-(defn trim-brackets
-  [s]
-  (if (and (string/starts-with? s "\\left[")
-           (string/ends-with? s "\\right]"))
-    (subs s 7 (- (count s) 8))
-    s))
 
 
 (extend-protocol mc/PMimeConvertible
@@ -603,7 +609,6 @@
 
 
 ;; Example models
-;; TODO: move to test namespace (but keep here for dev)
 
 (def kidney
   (model 
@@ -641,6 +646,7 @@
          :z_2 []}
         #{:x :z_2}
         #{:z_2 :y}))
+
 
 ;; Models where P(y | do(x)) is identifiable
 
@@ -900,41 +906,6 @@
 
 
 )
-
-;; TODO: document
-(defn cross-pairs
-  [coll1 coll2]
-  (for [i coll1
-        j coll2
-        :when (not= i j)]
-    #{i j}))
-
-
-;; TODO: refactor, check implementation, efficiency (transients?)
-(defn make-latent
-  "Latent project one node"
-  [m x]
-  (let [pa-x (get (:pa m) x)
-        ch-x (set (map first (filter #(contains? (second %) x) (:pa m))))
-        new-pa (into {}
-                     (for [[k v] (:pa m)
-                           :when (not= k x)]
-                       (if (contains? ch-x k)
-                           [k (disj (into v pa-x) x)]
-                           [k v])))
-        bi-remove (set (filter #(contains? % x) (:bi m)))
-        bi-ends (map #(first (disj % x)) bi-remove)
-        bi-add (union (set (cross-pairs bi-ends ch-x))
-                      (pairs-of ch-x)) ;; TODO: correct?
-        new-bi (union (difference (:bi m) bi-remove) bi-add)]
-    (->Model new-pa new-bi)))
-
-
-(defn latent-projection
-  "Latent-project x in m."
-  [m x]
-  (reduce #(make-latent %1 %2) m x))
-
 
 
 (comment
