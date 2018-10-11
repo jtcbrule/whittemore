@@ -172,10 +172,45 @@
 (deftest latent-projection-test
   (is
     (= (latent-projection wainer #{:z_0 :b})
-       wainer-latent)))
+       wainer-latent))
+  (is
+    (= (latent-projection wainer #{}) wainer))
+  (is
+    (not= (latent-projection wainer #{:z_0}) wainer)))
 
 (deftest wainer-identification
   (is (formula? (identify wainer-latent (q [:y] :do [:x])))))
+
+
+(def front-door
+  (model
+    {:u []
+     :x [:u]
+     :z [:x]
+     :y [:z :u]}))
+
+(def front-door-latent
+  (model
+    {:x []
+     :z [:x]
+     :y [:z]}
+    #{:x :y}))
+
+
+(deftest identify-d
+  (is (formula? (identify front-door-latent (q [:y] :do [:x])))
+    (=
+     (identify
+       front-door
+       (q [:y] :do [:x])
+       (p [:x :y :z]))
+     (identify
+       front-door-latent
+       (q [:y] :do [:x]))
+     (identify
+       front-door-latent
+       (q [:x :y :z])))))
+
 
 
 (def hedge-less

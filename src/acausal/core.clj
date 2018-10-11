@@ -54,19 +54,20 @@
        ~name)))
 
 
-;; TODO: refactor
 (defn cross-pairs
-  "Returns the cartesian product of coll1 and coll2."
+  "Returns the set of all unordered pairs #{i j} such that i != j
+  where i is in coll1 and j is in coll2."
   [coll1 coll2]
-  (for [i coll1
-        j coll2
-        :when (not= i j)]
-    #{i j}))
+  (set
+    (for [i coll1
+          j coll2
+          :when (not= i j)]
+      #{i j})))
 
 
-;; TODO: refactor, check implementation, efficiency (transients?)
+;; OPTIMIZE (use transients?)
 (defn make-latent
-  "Latent project one node"
+  "Returns a model where (single node) x is latent in m."
   [m x]
   (let [pa-x (get (:pa m) x)
         ch-x (set (map first (filter #(contains? (second %) x) (:pa m))))
@@ -78,8 +79,8 @@
                            [k v])))
         bi-remove (set (filter #(contains? % x) (:bi m)))
         bi-ends (map #(first (disj % x)) bi-remove)
-        bi-add (union (set (cross-pairs bi-ends ch-x))
-                      (pairs-of ch-x)) ;; TODO: correct?
+        bi-add (union (cross-pairs bi-ends ch-x)
+                      (pairs-of ch-x))
         new-bi (union (difference (:bi m) bi-remove) bi-add)]
     (->Model new-pa new-bi)))
 
@@ -127,8 +128,8 @@
 
 ;; OPTIMIZE (use transients to improve performance?)
 (defn pair-cut
-  "Returns a new set of pairs (sets) such that all pairs that contained an
-  element in x have been removed."
+  "Returns a new set of pairs (2-sets) such that all pairs that
+  contained an element in x have been removed."
   [pairs x]
   (let [to-remove (filter #(or (contains? x (first %))
                                (contains? x (second %)))
@@ -264,12 +265,8 @@
   (instance? Formula f))
 
 
-;; A hedge is composed of
-;; :g - a model that is a c-component
-;; :s - a subset of vertices such that G, G \cap S is a hedge
-(defrecord Hedge [g s])
-
 (defn fail [g s]
+  "Identification failure."
   {:hedge [g s]})
 
 
@@ -394,7 +391,7 @@
   [form]
   (cond
     (:hedge form)
-    (hash-set (apply ->Hedge (:hedge form)))
+    (hash-set (:hedge form))
 
     (:sum form)
     (extract-hedges (:sum form))
@@ -426,36 +423,49 @@
   "Alias for acausal.core/query."
   query)
 
-(defrecord Data [joint surrogate])
+
+(defrecord Data [joint])
 
 (defn data
-  "Returns a representation of the known joint probability function.
-  i.e. P(v | do(z')) \\forall z' \\subseteq z"
-  [v & {:keys [do*] :or {do* []}}]
-  (->Data (set v) (set do*)))
+  "Returns a representation of the known joint probability function."
+  [v]
+  (->Data (set v)))
 
 (def p
   "Alias for acausal.core/data"
   data)
 
 
-;; TODO: implement (identify m q d)
-;; TODO: signature? (return nil on failure? Seprate function for hedges?)
+;; A hedge is composed of
+;; :g - a model that is a c-component
+;; :s - a subset of vertices such that G, G \cap S is a hedge
+(defrecord Hedge [g s])
+
+;; A Fail record represents being unable to identify a query
+(defrecord Fail [])
+
+(defn fail?
+  "Returns true iff f is an instance of Fail."
+  [f]
+  (instance? Fail f))
+
+
+;; TODO: add support for IDC, zID, IDC*
 (defn identify
   "Returns a formula that computes query q from data d in model m.
-  Data defaults to P(v). Returns a Hedge if such a formula is guarenteed
-  to not exist. Otherwise, returns nil."
+  Data defaults to P(v)."
   ([m q]
    (let [form (id (:p q) (:do q) {:p (vertices m)} m)
-         hedges (extract-hedges form)]
+         hedges (map #(apply ->Hedge %) (extract-hedges form))]
      (if (empty? hedges)
        (into (->Formula) form)
-       (first hedges))))
+       (assoc (->Fail) :hedges hedges))))
   ([m q d]
-   (if (and (= (:joint d) (vertices m))
-            (empty? (:surrogate d)))
+   (if (= (:joint d) (vertices m))
      (identify m q)
-     (error "Unimplemented"))))
+     (let [latents (difference (vertices m) (:joint d))
+           projected-m (latent-projection m latents)]
+       (identify projected-m q)))))
 
 
 (defn identifiable?
@@ -481,7 +491,7 @@
       (dataset (map keyword (first data)) (rest data)))))
 
 
-
+;; FIXME
 ;; TODO: refactor, test
 ;; Unify queries and the {:p ...} terms?
 ;; broken if there are unbound variables in assignments.
@@ -508,7 +518,7 @@
       (recur (rest samples) (inc matching) (inc total)))))
 
 
-;; TODO: Fix (is broken)
+;; FIXME
 ;; TODO: turn this into a protocol?
 ;; explicit strategy argument?
 ;; broken if assignments leaves variables in formula unbound
@@ -535,6 +545,8 @@
       :else
       (error "Unsupported formula type"))))
 
+
+;; LaTeX 'compilation'
 
 (defn node->str
   "Convert a node to a LaTeX string."
@@ -604,21 +616,4 @@
     (mc/stream-to-string
       {:image/svg+xml (viz/hedge->svg this)})))
 
-
-
-;; TODO: move to Jupyter notebook
-;; Example models
-
-(def kidney
-  (model 
-    {:recovery [:treatment :size]
-     :size []
-     :treatment [:size]}))
-
-
-(def blood-pressure
-  (model 
-    {:recovery [:bp :treatment]
-     :bp [:treatment]
-     :treatment []}))
 
