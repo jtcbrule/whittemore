@@ -3,12 +3,13 @@
   (:require [acausal.viz :as viz]
             [better-cond.core :as b]
             [clojupyter.protocol.mime-convertible :as mc]
-            [clojure.core.matrix.dataset :refer [row-maps dataset]]
+            [clojure.core.matrix.dataset :as md]
+            [clojure.core.matrix.impl.dataset]
             [clojure.data.csv :as csv]
             [clojure.java.io :as io]
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
-            [clojure.pprint :refer [pprint]]))
+            [clojure.pprint :refer [pprint print-table]]))
 
 
 (defmacro error
@@ -482,40 +483,69 @@
 
 ;; I/O
 
-(defn read-csv-dataset
-  "Reads CSV-data into a core.matrix dataset.
+;; TODO: add options for header, processing options
+(defn read-csv
+  "Reads CSV data into a core.matrix dataset.
   Assumes that the first row is column names."
   [filename]
   (with-open [reader (io/reader filename)]
     (let [data (csv/read-csv reader)]
-      (dataset (map keyword (first data)) (rest data)))))
+      (md/dataset (map keyword (first data)) (rest data)))))
 
 
-;; FIXME
-;; TODO: refactor, test
-;; Unify queries and the {:p ...} terms?
-;; broken if there are unbound variables in assignments.
-(defn eval-prob
-  ""
-  [rows prob assignments]
-  (loop [samples rows, matching 0, total 0]
-    (cond
-      (nil? (first samples))
-      (/ matching total)
+(defn head
+  "Returns the first part of a dataset (default 10)."
+  [dataset & {:keys [n] :or {n 10}}]
+  (md/dataset (take n (md/row-maps dataset))))
 
-      ; :given doesn't match? skip
-      (not= (select-keys (first samples) (:given prob))
-            (select-keys assignments (:given prob)))
-      (recur (rest samples) matching total)
+
+(defn tail
+  "Returns the last part of a data set (default 10)."
+  [dataset & {:keys [n] :or {:n 10}}]
+  (md/dataset (take-last n (md/row-maps dataset))))
+
+
+;; Distributions
+
+;; TODO: add laplace smoothing
+;; TODO: refactor as a protocol
+;; support should be a map
+(defn categorical
+  "Estimate a categorical distribution"
+  [dataset & {:keys [support]}]
+  {:samples (md/row-maps dataset)
+   :support support})
+
+
+;; TODO: refactor
+(defn estimate-categorical-query
+  "Estimate query from categorical distribution."
+  [distribution expr bindings]
+  (cond
+    (not (empty? (:do expr)))
+    (error "Cannot estimate causal query")
+
+    (not (subset? (union (:p expr) (:given expr)) (set (keys bindings))))
+    (error "Unbound variables in query")
+
+    :else
+    (loop [samples (:samples distribution), matching 0, total 0]
+      (cond
+        (nil? (first samples))
+        (/ matching total)
+
+        ; bindings don't match given => skip
+        (not= (select-keys (first samples) (:given expr))
+              (select-keys bindings (:given expr)))
+        (recur (rest samples) matching total)
       
-      ; doesn't match the :p? increase total, but continue
-      (not= (select-keys (first samples) (:p prob))
-            (select-keys assignments (:p prob)))
-      (recur (rest samples) matching (inc total))
+        ; bindings don't match p => increment total
+        (not= (select-keys (first samples) (:p expr))
+              (select-keys bindings (:p expr)))
+        (recur (rest samples) matching (inc total))
 
-      ; matches all? inc matching and total
-      :else
-      (recur (rest samples) (inc matching) (inc total)))))
+        :else
+        (recur (rest samples) (inc matching) (inc total))))))
 
 
 ;; FIXME
@@ -524,11 +554,11 @@
 ;; broken if assignments leaves variables in formula unbound
 (defn estimate
   [distribution formula assignments]
-  (let [rows (row-maps distribution)
+  (let [rows nil ;;(md/row-maps distribution) ;; BORK!
         support (:support distribution)]
     (cond
       (:p formula)
-      (eval-prob rows formula assignments)
+      (estimate-categorical-query rows formula assignments)
 
       (:prod formula)
       (reduce *
@@ -616,4 +646,13 @@
     (mc/stream-to-string
       {:image/svg+xml (viz/hedge->svg this)})))
 
+
+;; TODO: pretty-printed HTML tables
+(extend-protocol mc/PMimeConvertible
+  clojure.core.matrix.impl.dataset.DataSet
+  (to-mime [this]
+    (mc/stream-to-string
+      {:text/plain
+        (with-out-str
+          (print-table (md/row-maps this)))})))
 
