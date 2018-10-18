@@ -6,6 +6,7 @@
             [clojure.core.matrix.dataset :as md]
             [clojure.core.matrix.impl.dataset]
             [clojure.data.csv :as csv]
+            [clojure.math.combinatorics :as combo]
             [clojure.java.io :as io]
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
@@ -484,6 +485,7 @@
 ;; I/O
 
 ;; TODO: add options for header, processing options
+;; wrap semantic-csv?
 (defn read-csv
   "Reads CSV data into a core.matrix dataset.
   Assumes that the first row is column names."
@@ -500,24 +502,31 @@
 
 
 (defn tail
-  "Returns the last part of a data set (default 10)."
-  [dataset & {:keys [n] :or {:n 10}}]
+  "Returns the last part of a dataset (default 10)."
+  [dataset & {:keys [n] :or {n 10}}]
   (md/dataset (take-last n (md/row-maps dataset))))
 
 
+(defn map-vals
+  "Map a function over the values of a persistent map."
+  [f m]
+  (into (empty m) (for [[k v] m] [k (f v)])))
+
 ;; Distributions
 
-;; TODO: add laplace smoothing
+;; TODO: add laplace smoothing (Jeffrey prior smoothing?)
 ;; TODO: refactor as a protocol
-;; support should be a map
+;; Refactor design?
+;; NOTE: support should be a map
+;; make support optional second argument?
 (defn categorical
   "Estimate a categorical distribution"
   [dataset & {:keys [support]}]
   {:samples (md/row-maps dataset)
-   :support support})
+   :support (map-vals set support)})
 
 
-;; TODO: refactor
+;; TODO: refactor into protocol
 (defn estimate-categorical-query
   "Estimate query from categorical distribution."
   [distribution expr bindings]
@@ -548,30 +557,42 @@
         (recur (rest samples) (inc matching) (inc total))))))
 
 
+(defn all-bindings
+  "Given a map of vals -> collections, return a seq of maps that represents
+  every possible instantiation."
+  [m]
+  (let [original (into (sorted-map) m)
+        cart (apply combo/cartesian-product (vals original))]
+    (map #(zipmap (keys original) %) cart)))
+
+
 ;; FIXME
-;; TODO: turn this into a protocol?
-;; explicit strategy argument?
-;; broken if assignments leaves variables in formula unbound
-(defn estimate
-  [distribution formula assignments]
-  (let [rows nil ;;(md/row-maps distribution) ;; BORK!
-        support (:support distribution)]
+;; TODO: refactor into protocol
+;; NOTE: should return *distribution* for query
+(defn estimate-categorical-formula
+  [distribution expr bindings]
+  (let [support (:support distribution)]
     (cond
-      (:p formula)
-      (estimate-categorical-query rows formula assignments)
+      (:p expr)
+      (estimate-categorical-query distribution expr bindings)
 
-      (:prod formula)
+      (:prod expr)
       (reduce *
-              (map #(estimate distribution % assignments)
-                   (:prod formula)))
+              (map #(estimate-categorical-formula distribution % bindings)
+                   (:prod expr)))
 
-      (:sum formula)
-      (error "Unimplemented")
-      ; instatiation all assignments, send them into the 
-      ; current assignments, recur, add them up
-      ; also, need to support :numer :denom
+      (:numer expr)
+      (/ (estimate-categorical-formula distribution (:numer expr) bindings)
+         (estimate-categorical-formula distribution (:denom expr) bindings))
       
-      
+      ;TODO: test
+      (:sum expr)
+      (let [sum-support (all-bindings (select-keys support (:sub expr)))
+            new-bindings (map #(merge bindings % sum-support))]
+        (reduce +
+                (map #(estimate-categorical-formula distribution (:sum expr) %)
+                     new-bindings)))
+
       :else
       (error "Unsupported formula type"))))
 
@@ -647,7 +668,7 @@
       {:image/svg+xml (viz/hedge->svg this)})))
 
 
-;; TODO: pretty-printed HTML tables
+;; TODO: pretty-printed HTML tables?
 (extend-protocol mc/PMimeConvertible
   clojure.core.matrix.impl.dataset.DataSet
   (to-mime [this]
