@@ -19,6 +19,16 @@
   `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 
+;; TODO: consider a deformula macro instead to run identfy and bind it?
+(defmacro define
+  "Define a symbol as with def, but return the value."
+  [symbol value]
+  `(do
+     (def ~symbol
+       ~value)
+     ~symbol))
+
+
 ;; OPTIMIZE (currently creates two copies of every pair)
 (defn pairs-of
   "Returns all pairs of elements of coll as a set of sets."
@@ -566,8 +576,9 @@
     (map #(zipmap (keys original) %) cart)))
 
 
-;; FIXME
 ;; TODO: refactor into protocol
+;; TODO: rewrite to yield distribution of :p vars
+;; TODO: write tests
 ;; NOTE: should return *distribution* for query
 (defn estimate-categorical-formula
   [distribution expr bindings]
@@ -588,7 +599,7 @@
       ;TODO: test
       (:sum expr)
       (let [sum-support (all-bindings (select-keys support (:sub expr)))
-            new-bindings (map #(merge bindings % sum-support))]
+            new-bindings (map #(merge bindings %) sum-support)]
         (reduce +
                 (map #(estimate-categorical-formula distribution (:sum expr) %)
                      new-bindings)))
