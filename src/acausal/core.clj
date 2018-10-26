@@ -522,6 +522,7 @@
   [f m]
   (into (empty m) (for [[k v] m] [k (f v)])))
 
+
 ;; Distributions
 
 ;; TODO: add laplace smoothing (Jeffrey prior smoothing?)
@@ -536,7 +537,10 @@
    :support (map-vals set support)})
 
 
-;; TODO: refactor into protocol
+;; TODO: refactor into protocol?
+;; expects full bindings
+;; NOTE: especially for continuous variables, would like to have option
+;; to get the density estimate, with some variables free.
 (defn estimate-categorical-query
   "Estimate query from categorical distribution."
   [distribution expr bindings]
@@ -576,11 +580,9 @@
     (map #(zipmap (keys original) %) cart)))
 
 
-;; TODO: refactor into protocol
-;; TODO: rewrite to yield distribution of :p vars
+;; helper function for estimate-categorical-formula
 ;; TODO: write tests
-;; NOTE: should return *distribution* for query
-(defn estimate-categorical-formula
+(defn estimate-categorical-point
   [distribution expr bindings]
   (let [support (:support distribution)]
     (cond
@@ -589,23 +591,67 @@
 
       (:prod expr)
       (reduce *
-              (map #(estimate-categorical-formula distribution % bindings)
+              (map #(estimate-categorical-point distribution % bindings)
                    (:prod expr)))
 
       (:numer expr)
-      (/ (estimate-categorical-formula distribution (:numer expr) bindings)
-         (estimate-categorical-formula distribution (:denom expr) bindings))
+      (/ (estimate-categorical-point distribution (:numer expr) bindings)
+         (estimate-categorical-point distribution (:denom expr) bindings))
       
       ;TODO: test
       (:sum expr)
       (let [sum-support (all-bindings (select-keys support (:sub expr)))
             new-bindings (map #(merge bindings %) sum-support)]
         (reduce +
-                (map #(estimate-categorical-formula distribution (:sum expr) %)
+                (map #(estimate-categorical-point distribution (:sum expr) %)
                      new-bindings)))
 
       :else
       (error "Unsupported formula type"))))
+
+
+;; TODO: rename?
+;; TODO: add some way of getting confidence intervals
+;; (probably based on number of samples from the original)
+(defrecord EstimatedCategorical [pmf])
+
+
+;; TODO: refactor as protocol
+;; TODO: return a *distribution*
+;; how to handle bindings contianing all vars?
+;; ^ Technically, that's an error, but allow returning single probability val?
+;; test
+(defn estimate-categorical
+  [distribution expr bindings]
+  (let [support (:support distribution)
+        all-vars (free expr)
+        bound-vars (set (keys bindings))
+        free-vars (difference all-vars bound-vars)
+        new-bindings (all-bindings (select-keys support free-vars))]
+    (->EstimatedCategorical
+      (into {}
+            (for [b new-bindings]
+              {b (estimate-categorical-point
+                   distribution expr (merge bindings b))})))))
+
+
+;; TODO: refactor as protocol
+;; (identify model data query)
+;; (estimate distribution expr
+;; The uber-function that calls protocols estimate-query or estimate-formula
+;; Effectively double dispatch? Unneeded for categorical, but useful for
+;; continuous valued random variables?
+;; Consider defining the protocol to *only* support estimate,
+;; maybe the summary stats as well? (seperate protocol?)
+;; TODO: refactor/update/test
+(defn estimate
+  "Estimate expression expr with bindings, from distribution."
+  [distribution expr bindings]
+  nil)
+
+
+
+
 
 
 ;; LaTeX 'compilation'
@@ -655,8 +701,10 @@
     (error "Unable to compile to LaTeX")))
 
 
-
 ;; Jupyter integration
+;; TODO: move to dedicated namespaces?
+;; TODO: create a 'live' namespace
+
 
 (extend-protocol mc/PMimeConvertible
   Model
