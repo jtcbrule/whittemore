@@ -69,7 +69,8 @@
 (.getCategoryPlot (plot-categorical tmp))
 
 (view
-  (incanter.charts/bar-chart [:a :b :c] [1 2 3]))
+  (incanter.charts/bar-chart [:a :b :c] [1 2 3]
+                             :title "HI"))
 
 (def x (vec (range 10 50)))
 (def y (vec (map #(* % %) x)))

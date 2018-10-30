@@ -495,6 +495,7 @@
 ;; I/O
 
 ;; TODO: add options for header, processing options
+;; TODO: broken if last line is blank
 ;; wrap semantic-csv?
 (defn read-csv
   "Reads CSV data into a core.matrix dataset.
@@ -538,6 +539,7 @@
 
 
 ;; TODO: refactor into protocol?
+;; TODO: rename?
 ;; expects full bindings
 ;; NOTE: especially for continuous variables, would like to have option
 ;; to get the density estimate, with some variables free.
@@ -571,6 +573,7 @@
         (recur (rest samples) (inc matching) (inc total))))))
 
 
+;; TODO: test
 (defn all-bindings
   "Given a map of vals -> collections, return a seq of maps that represents
   every possible instantiation."
@@ -581,6 +584,9 @@
 
 
 ;; helper function for estimate-categorical-formula
+;; Assumes expr is a categorical formula, expects full bindings
+;; i.e. no unbound variables left in expr
+;; TODO: rename?
 ;; TODO: write tests
 (defn estimate-categorical-point
   [distribution expr bindings]
@@ -720,19 +726,10 @@
       {:text/latex (str "$$" (formula->latex this) "$$")})))
 
 
+;; TODO: remove?
 (extend-protocol mc/PMimeConvertible
   Hedge
   (to-mime [this]
     (mc/stream-to-string
       {:image/svg+xml (viz/hedge->svg this)})))
-
-
-;; TODO: pretty-printed HTML tables?
-(extend-protocol mc/PMimeConvertible
-  clojure.core.matrix.impl.dataset.DataSet
-  (to-mime [this]
-    (mc/stream-to-string
-      {:text/plain
-        (with-out-str
-          (print-table (md/row-maps this)))})))
 
