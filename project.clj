@@ -8,5 +8,6 @@
                  [better-cond "1.0.1"]
                  [rhizome "0.2.9"]
                  [org.clojars.didiercrunch/clojupyter "0.1.5"]
+                 [semantic-csv "0.1.0"]
                  [incanter "1.9.3"]]
   :plugins [[lein-jupyter "0.1.16"]])

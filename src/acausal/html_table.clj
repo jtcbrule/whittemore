@@ -4,33 +4,41 @@
             [clojure.string :refer [join]]
             [clojupyter.protocol.mime-convertible :as mc]))
 
+(defn to-string
+  "Custom to-string for dataset html-table.
+  Strings are wrapped with double quotes; nils are 'nil'."
+  [o]
+  (cond
+    (string? o) (str "\"" o "\"")
+    (nil? o) "nil"
+    :else (str o)))
 
-(defn dataset->html
+(defn dataset->html-str
   "Returns an HTML table representation of dataset d."
   [d]
   (let [ks (:column-names d)]
     (str
       "<table class=\"dataframe\">\n"
+      "<thead>\n"
       "<tr>"
       (join
         (for [k ks]
           (str "<th>"
-               (if (string? k)
-                 (str "\"" k "\"")
-                 k)
+               (to-string k)
                "</th>")))
       "</tr>\n"
+      "</thead>\n"
+      "<tbody>\n"
       (join
         (for [row (row-maps d)]
           (str "<tr>"
                (join
                  (for [e (map row ks)]
                    (str "<td>"
-                        (if (string? e)
-                          (str "\"" e "\"")
-                          e)
+                        (to-string e)
                         "</td>")))
                "</tr>\n")))
+      "</tbody>\n"
       "</table>\n")))
 
 
@@ -38,5 +46,5 @@
   clojure.core.matrix.impl.dataset.DataSet
   (to-mime [this]
     (mc/stream-to-string
-      {:text/html (dataset->html this)})))
+      {:text/html (dataset->html-str this)})))
 

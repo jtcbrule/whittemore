@@ -4,13 +4,12 @@
             [better-cond.core :as b]
             [clojupyter.protocol.mime-convertible :as mc]
             [clojure.core.matrix.dataset :as md]
-            [clojure.core.matrix.impl.dataset]
-            [clojure.data.csv :as csv]
             [clojure.math.combinatorics :as combo]
             [clojure.java.io :as io]
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
-            [clojure.pprint :refer [pprint print-table]]))
+            [clojure.pprint :refer [pprint print-table]]
+            [semantic-csv.core :as sc]))
 
 
 (defmacro error
@@ -443,6 +442,8 @@
   [v]
   (->Data (set v)))
 
+
+;; TODO: remove?
 (def p
   "Alias for acausal.core/data"
   data)
@@ -492,18 +493,50 @@
      false)))
 
 
+;; Utility function
+
+(defn map-vals
+  "Map a function over the values of a persistent map."
+  [f m]
+  (into (empty m) (for [[k v] m] [k (f v)])))
+
+
 ;; I/O
 
-;; TODO: add options for header, processing options
-;; TODO: broken if last line is blank
-;; wrap semantic-csv?
+(def cast-fns
+  {Long sc/->long,
+   Double sc/->double,
+   Float sc/->float,
+   Integer sc/->int})
+
+(defn- types->cast-fns
+  [types]
+  (map-vals #(get cast-fns % identity) types))
+
+
 (defn read-csv
-  "Reads CSV data into a core.matrix dataset.
-  Assumes that the first row is column names."
-  [filename]
-  (with-open [reader (io/reader filename)]
-    (let [data (csv/read-csv reader)]
-      (md/dataset (map keyword (first data)) (rest data)))))
+  "Alpha - subject to change.
+  Reads CSV data into a core.matrix dataset.
+
+  Specify :types as a map from columns to types,
+  e.g. :types {:foo Long, :bar Double}, default type is String.
+
+  Other options are passed to semantic-csv/process
+  Note that :cast-fns will override :types.
+
+  See also incanter.io/read-dataset"
+  [filepath & {:as options}]
+  (let [defaults {:comment-re #"^$|^\#" ; skip blank lines and comments
+                  :cast-fns (if (:types options)
+                              (types->cast-fns (:types options))
+                              nil)}
+        options (->> (dissoc options :types)
+                     (into defaults)
+                     (apply concat))]
+    (with-open [reader (io/reader filepath)]
+      (let [data (apply sc/parse-and-process reader options)
+            col-names (-> (first data) keys sort)]
+        (md/dataset col-names data)))))
 
 
 (defn head
@@ -516,12 +549,6 @@
   "Returns the last part of a dataset (default 10)."
   [dataset & {:keys [n] :or {n 10}}]
   (md/dataset (take-last n (md/row-maps dataset))))
-
-
-(defn map-vals
-  "Map a function over the values of a persistent map."
-  [f m]
-  (into (empty m) (for [[k v] m] [k (f v)])))
 
 
 ;; Distributions
@@ -619,6 +646,7 @@
 ;; TODO: rename?
 ;; TODO: add some way of getting confidence intervals
 ;; (probably based on number of samples from the original)
+;; TODO: rename pdf
 (defrecord EstimatedCategorical [pmf])
 
 
