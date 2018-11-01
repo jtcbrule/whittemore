@@ -18,6 +18,26 @@
   `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 
+;; NOTE: unused
+(defn transpose
+  "Returns the transpose of directed graph g.
+  Graphs are assumed to be of the form {nodes #{nodes}}."
+  [g]
+  (apply merge-with
+         into
+
+         ; key -> #{}
+         (into {}
+               (for [k (keys g)]
+                 {k #{}}))
+
+         ; val -> #{key}
+         (for [k (keys g)
+               v (get g k)]
+           {v #{k}})))
+
+
+
 ;; TODO: consider a deformula macro instead to run identfy and bind it?
 (defmacro define
   "Define a symbol as with def, but return the value."
