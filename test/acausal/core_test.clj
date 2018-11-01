@@ -4,6 +4,21 @@
             [acausal.core :refer :all]))
 
 
+(def dag
+  {:x #{:z}
+   :y #{:x :z}
+   :z #{}})
+
+(def dag-transpose
+  {:x #{:y}
+   :y #{}
+   :z #{:x :y}})
+
+(deftest transpose-test
+  (is (= (transpose dag)
+         dag-transpose)))
+
+
 ;; Models where P(y | do(x)) is identifiable
 
 (def ident-a
