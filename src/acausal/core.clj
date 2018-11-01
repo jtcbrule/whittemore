@@ -739,7 +739,6 @@
 ;; TODO: move to dedicated namespaces?
 ;; TODO: create a 'live' namespace
 
-
 (extend-protocol mc/PMimeConvertible
   Model
   (to-mime [this]
@@ -753,11 +752,4 @@
     (mc/stream-to-string
       {:text/latex (str "$$" (formula->latex this) "$$")})))
 
-
-;; TODO: remove?
-(extend-protocol mc/PMimeConvertible
-  Hedge
-  (to-mime [this]
-    (mc/stream-to-string
-      {:image/svg+xml (viz/hedge->svg this)})))
 
