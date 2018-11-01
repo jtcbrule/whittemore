@@ -1,14 +1,36 @@
 (ns acausal.graphviz
-  (:require [clojure.string :as string]
+  (:require [clojure.java.shell :refer [sh]]
+            [clojure.string :as string]
             [dorothy.core :as dot]))
 
+(declare dot-renderer)
 
-;; TODO: fallback to viz.cljc
+(try
+  (sh "nodot" "-V")
+  (def dot-renderer :dorothy)
+
+  (catch Exception e
+    (def dot-renderer :viz-cljc)))
+
+(defn warn! [msg] (.println *err* msg))
+
+;
+(def dot->svg
+  (if (= dot-renderer :dorothy)
+    (ns-resolve 'dorothy.core 'render)
+    (do
+      (warn! "WARNING: dot not in PATH")
+      ;; try catch, warning if fail, rebind as empty, plus warning on call
+      (require '[viz.core])
+      (ns-resolve 'viz.core 'image))))
+
+
+
+(comment
 (defn dot->svg
-  "Render dot spec as svg."
   [dot-str]
   (dot/render dot-str {:format :svg}))
-
+)
 
 ;; NOTE: unused; subscripts do not render well with SVG
 ;; Consider using dot2tex --texmode=math instead
@@ -93,6 +115,11 @@
      :z_2 []}
     #{:x :z_2}
     #{:z_2 :y}))
+
+(model->svg napkin)
+
+
+(spit "tmp.svg" (viz.core/image (model->dot wainer)))
 
 (def wainer
   (model
