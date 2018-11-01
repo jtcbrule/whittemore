@@ -1,6 +1,6 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
-  (:require [acausal.viz :as viz]
+  (:require [acausal.graphviz :as viz]
             [better-cond.core :as b]
             [clojupyter.protocol.mime-convertible :as mc]
             [clojure.core.matrix.dataset :as md]

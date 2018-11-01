@@ -1,4 +1,4 @@
-(ns acausal.viz
+(ns acausal.graphviz
   (:require [clojure.string :as string]
             [rhizome.viz]
             [dorothy.core :as dot]))
