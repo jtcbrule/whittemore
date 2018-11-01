@@ -3,36 +3,46 @@
             [clojure.string :as string]
             [dorothy.core :as dot]))
 
+
+;; attempt fallback to viz-cljc if Graphviz is not installed
 (declare dot-renderer)
 
 (try
-  (sh "nodot" "-V")
+  (sh "dot" "-V")
   (def dot-renderer :dorothy)
-
   (catch Exception e
     (def dot-renderer :viz-cljc)))
 
-(defn warn! [msg] (.println *err* msg))
 
-;
+(defn warn! [& more] (.println *err* (apply str more)))
+
+
+(defn error-svg [_]
+  "<svg width='300' height='30'>
+  <text x='0' y='15' font-family='monospace'>
+  ERROR: unable to render SVG
+  </text>
+  </svg>")
+
+
 (def dot->svg
+  "Returns an SVG string that renders the given grapvhiz string."
   (if (= dot-renderer :dorothy)
-    (ns-resolve 'dorothy.core 'render)
+    (fn [dot-str]
+      (@(ns-resolve 'dorothy.core 'render) dot-str {:format :svg}))
     (do
-      (warn! "WARNING: dot not in PATH")
-      ;; try catch, warning if fail, rebind as empty, plus warning on call
-      (require '[viz.core])
-      (ns-resolve 'viz.core 'image))))
+      (warn! "WARNING: \"dot\" not found in PATH"
+             ", check graphviz installation")
+      (try
+        (require '[viz.core])
+        @(ns-resolve 'viz.core 'image)
+        (catch Exception e
+          (warn! "WARNING: \"viz-cljc\" not found in CLASSPATH"
+                 ", unable to render SVG")
+          error-svg)))))
 
 
-
-(comment
-(defn dot->svg
-  [dot-str]
-  (dot/render dot-str {:format :svg}))
-)
-
-;; NOTE: unused; subscripts do not render well with SVG
+;; NOTE: unused; HTML label subscripts do not render well with SVG
 ;; Consider using dot2tex --texmode=math instead
 (defn format-keyword
   "Returns an html subscripted string, given a keyword with single underscore."
@@ -71,9 +81,9 @@
 
 
 (defn view-model
-  "View a model.
+  "Render and view a model, displaying it in a JFrame.
   
-  Requires dot to be on your PATH, i.e. install graphviz."
+  Requires \"dot\" to be in PATH, i.e. graphviz must be installed."
   [m]
   (-> m model->dot dot/show!))
 
@@ -91,46 +101,15 @@
   (dot/render dot-str {:format :png}))
 
 
-; from acausal.core
+;; alternative Jupyter protocol for rendering models as png
+;; originally part of acausal.core
 (comment
 
 (extend-protocol mc/PMimeConvertible
   Model
   (to-mime [this]
     (mc/stream-to-string
-      {:image/png (-> this viz/model->dot viz/dot->png)})))
-
-)
-
-
-(comment
-
-(require '[acausal.core :refer [model]])
-
-(def napkin
-  (model
-    {:z_1 [:z_2]
-     :x [:z_1]
-     :y [:x]
-     :z_2 []}
-    #{:x :z_2}
-    #{:z_2 :y}))
-
-(model->svg napkin)
-
-
-(spit "tmp.svg" (viz.core/image (model->dot wainer)))
-
-(def wainer
-  (model
-    {:z_0 []
-     :b [:z_0]
-     :z_1 [:z_0]
-     :x [:z_0]
-     :z_2 [:z_1 :x]
-     :z_3 [:z_2 :b]
-     :y [:x :z_2 :z_3]}))
-
+   g  {:image/png (-> this viz/model->dot viz/dot->png)})))
 
 )
 

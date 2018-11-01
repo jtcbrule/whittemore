@@ -9,6 +9,5 @@
                  [dorothy "0.0.6"]
                  [org.clojars.didiercrunch/clojupyter "0.1.5"]
                  [semantic-csv "0.1.0"]
-                 [incanter "1.9.3"]
-                 [viz-cljc "0.1.3"]]
+                 [incanter "1.9.3"]]
   :plugins [[lein-jupyter "0.1.16"]])
