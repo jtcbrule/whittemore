@@ -8,19 +8,19 @@
             [clojure.java.io :as io]
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
-            [clojure.pprint :refer [pprint print-table]]
             [semantic-csv.core :as sc]))
 
 
+;; TODO: move to acausal.util?
 (defmacro error
   "Throws a RuntimeException with optional additional data."
   [msg & keyvals]
   `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 
-;; NOTE: unused
 (defn transpose
-  "Returns the transpose of directed graph g.
+  "Alpha - subject to change.
+  Returns the transpose of directed graph g.
   Graphs are assumed to be of the form {nodes #{nodes}}."
   [g]
   (apply merge-with
@@ -37,10 +37,9 @@
            {v #{k}})))
 
 
-
-;; TODO: consider a deformula macro instead to run identfy and bind it?
 (defmacro define
-  "Define a symbol as with def, but return the value."
+  "Alpha - subject to change.
+  Define a symbol as with def, but return the value."
   [symbol value]
   `(do
      (def ~symbol
@@ -71,7 +70,8 @@
 
 
 (defmacro defmodel
-  "Define a model, as with (def ...), but return the value of the model."
+  "Alpha - subject to change.
+  Define a model, as with (def ...), but return the value of the model."
   [name docstring? & args]
   (if (string? docstring?)
     `(do
@@ -191,7 +191,7 @@
     (->Model pa bi)))
 
 
-
+;; TODO: rename?
 (defn adjacent
   "Returns the nodes adjacent to node (via the bidirected edges in pairs)."
   [pairs node]
@@ -282,6 +282,7 @@
       before)))
 
 
+;; TODO: refactor?
 ;; A formula is a recursive type of:
 ;; :prod #{formulas}
 ;; :sum formula, :sub #{vars}
@@ -296,6 +297,7 @@
   (instance? Formula f))
 
 
+;; TODO: rename?
 (defn fail [g s]
   "Identification failure."
   {:hedge [g s]})
@@ -513,8 +515,7 @@
      false)))
 
 
-;; Utility function
-
+;; TODO: move to acausal.util?
 (defn map-vals
   "Map a function over the values of a persistent map."
   [f m]
@@ -704,10 +705,6 @@
   nil)
 
 
-
-
-
-
 ;; LaTeX 'compilation'
 
 (defn node->str
@@ -757,7 +754,7 @@
 
 ;; Jupyter integration
 ;; TODO: move to dedicated namespaces?
-;; TODO: create a 'live' namespace
+;; TODO: create a 'live' namespace?
 
 (extend-protocol mc/PMimeConvertible
   Model

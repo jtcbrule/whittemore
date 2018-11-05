@@ -14,6 +14,7 @@
     (def dot-renderer :viz-cljc)))
 
 
+;; TODO: move to acausal.util?
 (defn warn! [& more] (.println *err* (apply str more)))
 
 
@@ -42,7 +43,8 @@
           error-svg)))))
 
 
-;; NOTE: unused; HTML label subscripts do not render well with SVG
+;; NOTE: unused
+;; HTML label subscripts do not render well with SVG
 ;; Consider using dot2tex --texmode=math instead
 (defn format-keyword
   "Returns an html subscripted string, given a keyword with single underscore."
@@ -80,18 +82,18 @@
           [(first pair) (second pair) bi-options])))))
 
 
+(defn model->svg
+  "Convert a model as an svg string."
+  [m]
+  (-> m model->dot dot->svg))
+
+
 (defn view-model
   "Render and view a model, displaying it in a JFrame.
   
   Requires \"dot\" to be in PATH, i.e. graphviz must be installed."
   [m]
   (-> m model->dot dot/show!))
-
-
-(defn model->svg
-  "Convert a model as an svg string."
-  [m]
-  (-> m model->dot dot->svg))
 
 
 ;; NOTE: unused
@@ -102,14 +104,15 @@
 
 
 ;; alternative Jupyter protocol for rendering models as png
-;; originally part of acausal.core
 (comment
 
-(extend-protocol mc/PMimeConvertible
-  Model
+(extend-protocol clojupyter.protocol.mime-convertible/PMimeConvertible
+  acausal.core.Model
   (to-mime [this]
-    (mc/stream-to-string
-   g  {:image/png (-> this viz/model->dot viz/dot->png)})))
+    (clojupyter.protocol.mime-convertible/stream-to-string
+      {:image/png (-> this
+                      acausal.graphviz/model->dot
+                      acausal.graphviz/dot->png)})))
 
 )
 
