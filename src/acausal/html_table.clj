@@ -1,5 +1,5 @@
 (ns acausal.html-table
-  (:require [clojure.core.matrix.dataset :refer [row-maps]]
+  (:require [clojure.core.matrix.dataset :refer [row-maps column-names]]
             [clojure.core.matrix.impl.dataset]
             [clojure.string :refer [join]]
             [clojupyter.protocol.mime-convertible :as mc]))
@@ -16,7 +16,7 @@
 (defn dataset->html-str
   "Returns an HTML table representation of dataset d."
   [d]
-  (let [ks (:column-names d)]
+  (let [ks (column-names d)]
     (str
       "<table class=\"dataframe\">\n"
       "<thead>\n"

@@ -37,6 +37,7 @@
            {v #{k}})))
 
 
+;; TODO: add docstring version?
 (defmacro define
   "Alpha - subject to change.
   Define a symbol as with def, but return the value."
@@ -283,6 +284,8 @@
 
 
 ;; TODO: refactor?
+;; TODO: rename :p -> :effect
+;; TODO: Formula to have :form and :bindings ?
 ;; A formula is a recursive type of:
 ;; :prod #{formulas}
 ;; :sum formula, :sub #{vars}
@@ -506,13 +509,9 @@
 (defn identifiable?
   "True iff q is identifiable in m from P(v)"
   ([m q]
-   (if (formula? (identify m q))
-     true
-     false))
+    (formula? (identify m q)))
   ([m q d]
-   (if (formula? (identify m q d))
-     true
-     false)))
+    (formula? (identify m q d))))
 
 
 ;; TODO: move to acausal.util?
@@ -574,23 +573,50 @@
 
 ;; Distributions
 
+
+;; TODO: docstring, additional methods (e.g. summary statistics)
+;; Have two versions of estiamte? one for distribution, second argument
+;; as a 'catch-all' keyword/map arguments?
+;; include plotting in this?
+;; may have to rename estimate, if we want a 'super-function' that permits
+;; keyword arguments
+(defprotocol Distribution
+  (estimate [distribution formula bindings]))
+
+
+;; TODO: add 'smoothing' argument?
+;; Empirical name is good
+;; estimate yields an Estimated categorical
+(defrecord EmpiricalCategorical [samples support])
+
+;; Rename?
+(defrecord EstimatedCategorical [pmf])
+
+
+;; TODO: rename?
+;; Normal kernel, plug-in or cross-validated bandwidth selection
+;; Inference via MCMC (random walk MH, or no-u-turn)
+;; yields a MCMCSample? Want to preserve distribution -> distribution
+(defrecord GaussianKDE [samples])
+
+
 ;; TODO: add laplace smoothing (Jeffrey prior smoothing?)
 ;; TODO: refactor as a protocol
 ;; Refactor design?
 ;; NOTE: support should be a map
-;; make support optional second argument?
-(defn categorical
+;; make support optional second argument? auto-infer support?
+;; rename empirical-categorical?
+(defn empirical-categorical
   "Estimate a categorical distribution"
   [dataset & {:keys [support]}]
   {:samples (md/row-maps dataset)
    :support (map-vals set support)})
 
 
-;; TODO: refactor into protocol?
-;; TODO: rename?
+;; NOTE: helper function
 ;; expects full bindings
-;; NOTE: especially for continuous variables, would like to have option
-;; to get the density estimate, with some variables free.
+;; TODO: rename?
+;; TODO: refactor?
 (defn estimate-categorical-query
   "Estimate query from categorical distribution."
   [distribution expr bindings]
@@ -664,13 +690,6 @@
       (error "Unsupported formula type"))))
 
 
-;; TODO: rename?
-;; TODO: add some way of getting confidence intervals
-;; (probably based on number of samples from the original)
-;; TODO: rename pdf
-(defrecord EstimatedCategorical [pmf])
-
-
 ;; TODO: refactor as protocol
 ;; TODO: return a *distribution*
 ;; how to handle bindings contianing all vars?
@@ -698,14 +717,16 @@
 ;; continuous valued random variables?
 ;; Consider defining the protocol to *only* support estimate,
 ;; maybe the summary stats as well? (seperate protocol?)
-;; TODO: refactor/update/test
+;; TODO: keep this function to handle optional arguments to protocol?
+;; can't have same name, though
+(comment
 (defn estimate
   "Estimate expression expr with bindings, from distribution."
   [distribution expr bindings]
   nil)
+)
 
-
-;; LaTeX 'compilation'
+;; LaTeX
 
 (defn node->str
   "Convert a node to a LaTeX string."
