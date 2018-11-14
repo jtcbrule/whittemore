@@ -37,7 +37,7 @@
            {v #{k}})))
 
 
-;; TODO: add docstring version?
+;; TODO: add docstring version
 (defmacro define
   "Alpha - subject to change.
   Define a symbol as with def, but return the value."
@@ -609,8 +609,9 @@
 (defn empirical-categorical
   "Estimate a categorical distribution"
   [dataset & {:keys [support]}]
-  {:samples (md/row-maps dataset)
-   :support (map-vals set support)})
+  (->EmpiricalCategorical
+    (md/row-maps dataset)
+    (map-vals set support)))
 
 
 ;; NOTE: helper function
@@ -695,18 +696,20 @@
 ;; how to handle bindings contianing all vars?
 ;; ^ Technically, that's an error, but allow returning single probability val?
 ;; test
-(defn estimate-categorical
-  [distribution expr bindings]
-  (let [support (:support distribution)
-        all-vars (free expr)
-        bound-vars (set (keys bindings))
-        free-vars (difference all-vars bound-vars)
-        new-bindings (all-bindings (select-keys support free-vars))]
-    (->EstimatedCategorical
-      (into {}
-            (for [b new-bindings]
-              {b (estimate-categorical-point
-                   distribution expr (merge bindings b))})))))
+;; FIXME: doesn't check for bindings on the :p vars
+(extend-type EmpiricalCategorical
+  Distribution
+  (estimate [distribution expr bindings]
+    (let [support (:support distribution)
+          all-vars (free expr)
+          bound-vars (set (keys bindings))
+          free-vars (difference all-vars bound-vars)
+          new-bindings (all-bindings (select-keys support free-vars))]
+      (->EstimatedCategorical
+        (into {}
+              (for [b new-bindings]
+                {b (estimate-categorical-point
+                     distribution expr (merge bindings b))}))))))
 
 
 ;; TODO: refactor as protocol
