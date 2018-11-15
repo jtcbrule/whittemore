@@ -481,7 +481,8 @@
 
 ;; TODO: remove?
 (def p
-  "Alias for acausal.core/data"
+  "Alpha - subject to change.
+  Alias for acausal.core/data."
   data)
 
 
@@ -591,8 +592,14 @@
 ;; include plotting in this?
 ;; may have to rename estimate, if we want a 'super-function' that permits
 ;; keyword arguments
+;; TODO: rename estimate-distribution
+;; TODO: make it a two arg function? (i.e. require bound formulas)?
 (defprotocol Distribution
   (estimate [distribution formula bindings]))
+
+
+;; TODO: add (seperate namespace) a plot-distribution protocol
+;; TODO: protocol for summary statistics
 
 
 ;; TODO: add 'smoothing' argument?
