@@ -1,8 +1,7 @@
 (ns acausal.random
   (:require [acausal.core :as a
-             :refer [verticies transpose pairs-of
-                     model q identifiable?
-                     view-model]
+             :refer [vertices transpose pairs-of
+                     model q identifiable?]
             ;[incanter.core]
             ;[incanter.charts]
              ]))
@@ -51,7 +50,7 @@
 
 (defn percent-nontrivial-id
   [m]
-  (let [queries (nontrivial-singleton-queries (verticies m))]
+  (let [queries (nontrivial-singleton-queries (vertices m))]
     (/
      (->>
        queries
@@ -89,7 +88,7 @@
   (range 0 1 0.1))
 
 
-(nontrivial-singleton-queries (verticies (josh-model 10 (* 2 (er-num 10)) 0.9)))
+(nontrivial-singleton-queries (vertices (josh-model 10 (* 2 (er-num 10)) 0.9)))
 
 
 )
