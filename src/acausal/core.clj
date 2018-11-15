@@ -37,15 +37,26 @@
            {v #{k}})))
 
 
-;; TODO: add docstring version
+(defn foo [x & vals?]
+  (cond
+    (= (count vals?) 0) 0
+    (= (count vals?) 1) 1
+    :else :more))
+
+
 (defmacro define
   "Alpha - subject to change.
   Define a symbol as with def, but return the value."
-  [symbol value]
-  `(do
-     (def ~symbol
-       ~value)
-     ~symbol))
+  [symbol & init?]
+  (if (= (count init?) 2)
+    (let [docstring (first init?)
+          init (second init?)]
+      `(do
+         (def ~symbol ~docstring ~init)
+         ~init))
+    `(do
+       (def ~symbol ~@init?)
+       ~@init?)))
 
 
 ;; OPTIMIZE (currently creates two copies of every pair)
@@ -711,6 +722,10 @@
                 {b (estimate-categorical-point
                      distribution expr (merge bindings b))}))))))
 
+
+;; Distribution (estimate-distribution)
+;; make estimate a wrapper function
+;; distinguish bound vs. unbound formulas?
 
 ;; TODO: refactor as protocol
 ;; (identify model data query)
