@@ -585,6 +585,8 @@
 
 ;; Distributions
 
+;; TODO: refactor difference between bound and unbound formulas
+;; Have formuals implement IFn on bindings
 
 ;; TODO: docstring, additional methods (e.g. summary statistics)
 ;; Have two versions of estiamte? one for distribution, second argument
@@ -750,6 +752,7 @@
   [distribution expr bindings]
   nil)
 )
+
 
 ;; LaTeX
 
