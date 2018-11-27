@@ -46,7 +46,7 @@
 ;; UNUSED
 ;; Note that HTML label subscripts do not render well with SVG
 ;; Future code may optionally use dot2tex --texmode=math
-(defn format-keyword
+(defn- format-keyword
   "Returns an html subscripted string, given a keyword with single underscore."
   [kword]
   (let [s (string/split (name kword) #"_")]
@@ -92,6 +92,7 @@
   "<img src=\"data:image/svg+xml;base64,%s\">")
 
 (defn svg->img
+  "Returns the svg formatted as an html img tag."
   [svg]
   (format img-str
           (String. (b64/encode (.getBytes svg "UTF-8")) "UTF-8")))
@@ -112,12 +113,13 @@
 
 ;; UNUSED
 (defn dot->png
-  "Render dot spec as png."
+  "Render dot spec as png.
+  Requires \"dot\" to be in PATH, i.e. graphviz mus be installed."
   [dot-str]
   (dot/render dot-str {:format :png}))
 
 
-;; alternative Jupyter protocol for rendering models
+;; alternative Jupyter protocols for rendering models
 (comment
 
 (extend-protocol clojupyter.protocol.mime-convertible/PMimeConvertible
