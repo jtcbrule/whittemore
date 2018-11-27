@@ -792,11 +792,12 @@
 ;; TODO: move to dedicated namespaces?
 ;; TODO: create a 'live' namespace?
 
+
 (extend-protocol mc/PMimeConvertible
   Model
   (to-mime [this]
     (mc/stream-to-string
-      {:image/svg+xml (viz/model->svg this)})))
+      {:text/html (viz/model->img this)})))
 
 
 (extend-protocol mc/PMimeConvertible

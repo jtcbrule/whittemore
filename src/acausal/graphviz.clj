@@ -1,5 +1,6 @@
 (ns acausal.graphviz
   (:require [acausal.util :refer [warn]]
+            [clojure.data.codec.base64 :as b64]
             [clojure.java.shell :refer [sh]]
             [clojure.string :as string]
             [dorothy.core :as dot]))
@@ -16,8 +17,10 @@
 
 
 (defn error-svg [_]
-  "<svg width='300' height='30'>
-  <text x='0' y='15' font-family='monospace'>
+  "<svg width='300' height='30'
+  xmlns='http://www.w3.org/2000/svg'
+  xmlns:xlink='http://www.w3.org/1999/xlink'>
+  <text x='0' y='15' font-family='monospace' font-size='14px'>
   ERROR: unable to render SVG
   </text>
   </svg>")
@@ -42,7 +45,7 @@
 
 ;; UNUSED
 ;; Note that HTML label subscripts do not render well with SVG
-;; Future code may use dot2tex --texmode=math instead.
+;; Future code may optionally use dot2tex --texmode=math
 (defn format-keyword
   "Returns an html subscripted string, given a keyword with single underscore."
   [kword]
@@ -85,6 +88,20 @@
   (-> m model->dot dot->svg))
 
 
+(def img-str
+  "<img src=\"data:image/svg+xml;base64,%s\">")
+
+(defn svg->img
+  [svg]
+  (format img-str
+          (String. (b64/encode (.getBytes svg "UTF-8")) "UTF-8")))
+
+(defn model->img
+  "Convert a model to an img tag."
+  [m]
+  (-> m model->dot dot->svg svg->img))
+
+
 (defn view-model
   "Alpha - subject to change.
   Render and view a model, displaying it in a JFrame.
@@ -100,7 +117,7 @@
   (dot/render dot-str {:format :png}))
 
 
-;; alternative Jupyter protocol for rendering models as png
+;; alternative Jupyter protocol for rendering models
 (comment
 
 (extend-protocol clojupyter.protocol.mime-convertible/PMimeConvertible
@@ -110,6 +127,12 @@
       {:image/png (-> this
                       acausal.graphviz/model->dot
                       acausal.graphviz/dot->png)})))
+
+(extend-protocol mc/PMimeConvertible
+  Model
+  (to-mime [this]
+    (mc/stream-to-string
+      {:image/svg+xml (viz/model->svg this)})))
 
 )
 
