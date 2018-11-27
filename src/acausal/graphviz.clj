@@ -1,5 +1,6 @@
 (ns acausal.graphviz
-  (:require [clojure.java.shell :refer [sh]]
+  (:require [acausal.util :refer [warn]]
+            [clojure.java.shell :refer [sh]]
             [clojure.string :as string]
             [dorothy.core :as dot]))
 
@@ -12,10 +13,6 @@
   (def dot-renderer :dorothy)
   (catch Exception e
     (def dot-renderer :viz-cljc)))
-
-
-;; TODO: move to acausal.util?
-(defn warn! [& more] (.println *err* (apply str more)))
 
 
 (defn error-svg [_]
@@ -32,14 +29,14 @@
     (fn [dot-str]
       (@(ns-resolve 'dorothy.core 'render) dot-str {:format :svg}))
     (do
-      (warn! "WARNING: \"dot\" not found in PATH"
-             ", check graphviz installation")
+      (warn "WARNING: \"dot\" (Graphviz) not found in PATH,"
+            "attempting fallback to viz-cljc")
       (try
         (require '[viz.core])
         @(ns-resolve 'viz.core 'image)
         (catch Exception e
-          (warn! "WARNING: \"viz-cljc\" not found in CLASSPATH"
-                 ", unable to render SVG")
+          (warn "WARNING: \"viz-cljc\" not found in CLASSPATH,"
+                "unable to render SVG")
           error-svg)))))
 
 

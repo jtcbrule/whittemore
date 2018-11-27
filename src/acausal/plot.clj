@@ -1,16 +1,10 @@
 (ns acausal.plot
   "Plotting; currently wrappers around incanter.charts functions."
-  (:require [clojupyter.protocol.mime-convertible :as mc]
-            [incanter.core :refer [view save]]
+  (:require [acausal.util :refer [error]]
+            [clojupyter.protocol.mime-convertible :as mc]
             [incanter.charts :as chart])
   (:import [org.jfree.chart JFreeChart]))
 
-
-;; TODO: remove? (import from acausal.core?)
-(defmacro error
-  "Throws a RuntimeException with optional additional data."
-  [msg & keyvals]
-  `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 (def ^:dynamic *chart-size* {:width 500, :height 310})
 

@@ -10,6 +10,6 @@
                  [better-cond "1.0.1"]
                  [dorothy "0.0.6"]
                  [semantic-csv "0.1.0"]
-                 [incanter/incanter-core "1.9.3"]
+                 ;[incanter/incanter-core "1.9.3"]
                  [incanter/incanter-charts "1.9.3"]]
   :plugins [[lein-jupyter "0.1.16"]])

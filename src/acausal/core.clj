@@ -1,6 +1,7 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
   (:require [acausal.graphviz :as viz]
+            [acausal.util :refer [error]]
             [better-cond.core :as b]
             [clojupyter.protocol.mime-convertible :as mc]
             [clojure.core.matrix.dataset :as md]
@@ -9,13 +10,6 @@
             [clojure.set :refer [difference intersection subset? union]]
             [clojure.string :as string]
             [semantic-csv.core :as sc]))
-
-
-;; TODO: move to acausal.util?
-(defmacro error
-  "Throws a RuntimeException with optional additional data."
-  [msg & keyvals]
-  `(throw (ex-info (str ~msg) (hash-map ~@keyvals))))
 
 
 (defn transpose
@@ -35,13 +29,6 @@
          (for [k (keys g)
                v (get g k)]
            {v #{k}})))
-
-
-(defn foo [x & vals?]
-  (cond
-    (= (count vals?) 0) 0
-    (= (count vals?) 1) 1
-    :else :more))
 
 
 (defmacro define
