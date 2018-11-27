@@ -40,9 +40,9 @@
           error-svg)))))
 
 
-;; NOTE: unused
-;; HTML label subscripts do not render well with SVG
-;; Consider using dot2tex --texmode=math instead
+;; UNUSED
+;; Note that HTML label subscripts do not render well with SVG
+;; Future code may use dot2tex --texmode=math instead.
 (defn format-keyword
   "Returns an html subscripted string, given a keyword with single underscore."
   [kword]
@@ -86,14 +86,14 @@
 
 
 (defn view-model
-  "Render and view a model, displaying it in a JFrame.
-  
+  "Alpha - subject to change.
+  Render and view a model, displaying it in a JFrame.
   Requires \"dot\" to be in PATH, i.e. graphviz must be installed."
   [m]
   (-> m model->dot dot/show!))
 
 
-;; NOTE: unused
+;; UNUSED
 (defn dot->png
   "Render dot spec as png."
   [dot-str]
