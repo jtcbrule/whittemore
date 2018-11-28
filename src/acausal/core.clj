@@ -1,6 +1,7 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
   (:require [acausal.graphviz :as viz]
+            [acausal.html-table]
             [acausal.util :refer [error]]
             [better-cond.core :as b]
             [clojupyter.protocol.mime-convertible :as mc]
@@ -96,7 +97,7 @@
 
 
 ;; OPTIMIZE (use transients?)
-(defn make-latent
+(defn- make-latent
   "Returns a model where (single node) x is latent in m."
   [m x]
   (let [pa-x (get (:pa m) x)
@@ -191,7 +192,7 @@
 
 
 ;; TODO: rename?
-(defn adjacent
+(defn- adjacent
   "Returns the nodes adjacent to node (via the bidirected edges in pairs)."
   [pairs node]
   (disj (apply union
@@ -199,7 +200,8 @@
         node))
 
 
-(defn connected-component
+;; TODO: refactor?
+(defn- connected-component
   "Returns the c-component of node."
   [pairs node]
   (loop [frontier (list node)
@@ -246,7 +248,8 @@
             (keys g))))
 
 
-(defn kahn-cut
+;; TODO: rename?
+(defn- kahn-cut
   "Returns a dag g where all edges to and from x have been removed."
   [g x]
   (into {}
@@ -280,10 +283,9 @@
       (error "Not in ordering")
       before)))
 
+; HERE
 
 ;; TODO: refactor?
-;; TODO: rename :p -> :effect
-;; TODO: Formula to have :form and :bindings ?
 ;; A formula is a recursive type of:
 ;; :prod #{formulas}
 ;; :sum formula, :sub #{vars}
@@ -559,13 +561,15 @@
 
 
 (defn head
-  "Returns the first part of a dataset (default 10)."
+  "Alpha - subject to change.
+  Returns the first part of a dataset (default 10)."
   [dataset & {:keys [n] :or {n 10}}]
   (md/dataset (take n (md/row-maps dataset))))
 
 
 (defn tail
-  "Returns the last part of a dataset (default 10)."
+  "Alpha - subject to change.
+  Returns the last part of a dataset (default 10)."
   [dataset & {:keys [n] :or {n 10}}]
   (md/dataset (take-last n (md/row-maps dataset))))
 
@@ -788,10 +792,7 @@
     (error "Unable to compile to LaTeX")))
 
 
-;; Jupyter integration
-;; TODO: move to dedicated namespaces?
-;; TODO: create a 'live' namespace?
-
+;; Jupyter protocols
 
 (extend-protocol mc/PMimeConvertible
   Model
