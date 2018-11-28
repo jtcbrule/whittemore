@@ -576,6 +576,17 @@
 
 ;; Distributions
 
+
+(defn marginal-pmf
+  "Alpha - subject to change.
+  Returns the marginal distribution of variable x from multivariate pmf,
+  where pmf is a map of (map of variable to value) to probability."
+  [pmf x]
+  (let [f (fn [m k v]
+            (merge-with + m {(get k x) v}))]
+   (reduce-kv f {} pmf)))
+
+
 ;; TODO: refactor difference between bound and unbound formulas
 ;; Have formuals implement IFn on bindings
 
