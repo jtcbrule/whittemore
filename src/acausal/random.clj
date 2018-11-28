@@ -91,7 +91,7 @@
   #(josh-model num-vars p q))
 
 
-;; TEST CODE 
+;; some test code / experiments
 
 (comment
 
@@ -113,6 +113,7 @@
 
 (comment
 
+; takes a while to evaluate
 (def a-run
   (map
     #(mean
@@ -125,6 +126,8 @@
 
 (comment
 
+
+
 (incanter.core/view
   (incanter.charts/scatter-plot
     (range 0 1 0.05)
@@ -134,6 +137,8 @@
 
 (comment
 
+(require '[acausal.graphviz :refer [view-model]])
+
 (let [n 10]
   (view-model (erdos-renyi-model n (/ (java.lang.Math/log 10) 10))))
 
@@ -141,5 +146,4 @@
   (view-model (erdos-renyi-model n (/ 1 n))))
 
 )
-
 
