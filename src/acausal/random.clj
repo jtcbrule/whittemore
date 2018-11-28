@@ -1,4 +1,5 @@
 (ns acausal.random
+  "Alpha - subject to change."
   (:require [acausal.core :as a
              :refer [vertices transpose pairs-of model q identifiable?]]))
 
@@ -90,7 +91,6 @@
   #(josh-model num-vars p q))
 
 
-;; TODO: remove
 ;; TEST CODE 
 
 (comment
@@ -142,8 +142,4 @@
 
 )
 
-
-;; need incanter.charts/scatter-plot
-;; (-> thechart (.createBufferedImage width height))
-;; https://github.com/aria42/clojupyter/blob/mime-improvements/examples/incanter-demo.ipynb
 
