@@ -85,7 +85,7 @@
        ~name)))
 
 
-(defn cross-pairs
+(defn- cross-pairs
   "Returns the set of all unordered pairs #{i j} such that i != j
   where i is in coll1 and j is in coll2."
   [coll1 coll2]
@@ -117,7 +117,7 @@
 
 
 (defn latent-projection
-  "Latent-project x in m."
+  "Latent-project (set) x in m."
   [m x]
   (reduce #(make-latent %1 %2) m x))
 
@@ -149,7 +149,7 @@
   (set (keys (:pa m))))
 
 
-(defn graph-cut
+(defn- graph-cut
   "Returns a new graph where all keys in x now map to #{}.
   Graphs are assumed to be of the form {nodes #{nodes}}."
   [g x]
@@ -158,7 +158,7 @@
 
 
 ;; OPTIMIZE (use transients to improve performance?)
-(defn pair-cut
+(defn- pair-cut
   "Returns a new set of pairs (2-sets) such that all pairs that
   contained an element in x have been removed."
   [pairs x]
@@ -283,15 +283,13 @@
       (error "Not in ordering")
       before)))
 
-; HERE
 
-;; TODO: refactor?
-;; A formula is a recursive type of:
-;; :prod #{formulas}
-;; :sum formula, :sub #{vars}
-;; :numer formula, :denom formula
-;; :p #{vars}, :given #{vars}
-;; :p #{vars}
+;; A formula is a recursive map of:
+;; {:prod #{formulas}}
+;; {:sum formula, :sub #{vars}}
+;; {:numer formula, :denom formula
+;; {:p #{vars}, :given #{vars}}
+;; {:p #{vars}}
 (defrecord Formula [])
 
 (defn formula?
@@ -300,13 +298,12 @@
   (instance? Formula f))
 
 
-;; TODO: rename?
-(defn fail [g s]
-  "Identification failure."
+(defn hedge [g s]
+  "ID failure."
   {:hedge [g s]})
 
 
-;; TODO: optimizations (collapse nested sums, marginalize)
+;; TODO: OPTIMIZE (e.g. collapse nested sums, marginalize out)
 (defn sum
   "Returns \\sum_{sub} p"
   [sub p]
@@ -348,8 +345,9 @@
     (error "free preconditions failed")))
 
 
-;; TODO: optimizations (return probability expressions in terms of :given)
-(defn given-pi
+;; TODO: refactor?
+;; TODO: OPTIMIZE
+(defn- given-pi
   "Returns P(vi \\mid v_{pi}^(i-1)), in terms of probability distribution p.
   pi is a topological order of nodes in G"
   [p vi pi]
@@ -397,7 +395,7 @@
     :let [s (first c-x)
           c (c-components g)]
     (= c #{v})
-    (fail g s)
+    (hedge g s)
 
     ;line 6
     :let [pi (topological-sort g)]
@@ -449,15 +447,11 @@
 
 (defrecord Query [p do given])
 
-(defn query
-  "Returns a representation of the causal effect query.
-  e.g. (query [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
+(defn q
+  "Query. Returns a representation of the causal effect query,
+  e.g. (q [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
   [effect & {:keys [do given] :or {do [] given []}}]
   (->Query (set effect) (set do) (set given)))
-
-(def q
-  "Alias for acausal.core/query."
-  query)
 
 
 (defrecord Data [joint])
@@ -468,18 +462,6 @@
   (->Data (set v)))
 
 
-;; TODO: remove?
-(def p
-  "Alpha - subject to change.
-  Alias for acausal.core/data."
-  data)
-
-
-;; A hedge is composed of
-;; :g - a model that is a c-component
-;; :s - a subset of vertices such that G, G \cap S is a hedge
-(defrecord Hedge [g s])
-
 ;; A Fail record represents being unable to identify a query
 (defrecord Fail [])
 
@@ -489,16 +471,19 @@
   (instance? Fail f))
 
 
-;; TODO: add support for IDC, zID, IDC*
+;; TODO: add support for zID, IDC, IDC*
 (defn identify
   "Returns a formula that computes query q from data d in model m.
-  Data defaults to P(v)."
+  Data defaults to P(v), i.e. joint distribution over all variables in m."
   ([m q]
-   (let [form (id (:p q) (:do q) {:p (vertices m)} m)
-         hedges (map #(apply ->Hedge %) (extract-hedges form))]
-     (if (empty? hedges)
-       (into (->Formula) form)
-       (assoc (->Fail) :hedges hedges))))
+   (if (not (empty? (:given q)))
+     (error "Unsupported query (:given)")
+   ;else
+     (let [form (id (:p q) (:do q) {:p (vertices m)} m)
+           hedges (extract-hedges form)]
+       (if (empty? hedges)
+         (into (->Formula) form)
+         (assoc (->Fail) :hedges hedges)))))
   ([m q d]
    (if (= (:joint d) (vertices m))
      (identify m q)

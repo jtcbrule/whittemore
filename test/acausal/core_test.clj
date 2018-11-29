@@ -218,7 +218,7 @@
      (identify
        front-door
        (q [:y] :do [:x])
-       (p [:x :y :z]))
+       (data [:x :y :z]))
      (identify
        front-door-latent
        (q [:y] :do [:x]))
