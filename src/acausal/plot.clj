@@ -24,7 +24,7 @@
   [chart]
   (let [frame (ChartFrame. "JFreeChart" chart)]
     (doto frame
-      (.setSize (:width *chart-size*) (:height *chart-size*))
+      (.setSize (:width *plot-size*) (:height *plot-size*))
       (.setVisible true))
     frame))
 
