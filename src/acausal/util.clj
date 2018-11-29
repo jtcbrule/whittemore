@@ -13,3 +13,13 @@
     (apply print more)
     (println)))
 
+
+(defn map-vals
+  "Map f over the values of map m, returning a new map."
+  [f m]
+  (reduce-kv
+    (fn [m k v]
+      (assoc m k (f v)))
+    {}
+    m))
+

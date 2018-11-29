@@ -1,16 +1,13 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
   (:require [acausal.graphviz :as viz]
-            [acausal.html-table]
-            [acausal.util :refer [error]]
+            [acausal.util :refer [error map-vals]]
             [better-cond.core :as b]
             [clojupyter.protocol.mime-convertible :as mc]
             [clojure.core.matrix.dataset :as md]
             [clojure.math.combinatorics :as combo]
-            [clojure.java.io :as io]
             [clojure.set :refer [difference intersection subset? union]]
-            [clojure.string :as string]
-            [semantic-csv.core :as sc]))
+            [clojure.string :as string]))
 
 
 (defn transpose
@@ -500,67 +497,7 @@
     (formula? (identify m q d))))
 
 
-;; TODO: move to acausal.util?
-(defn map-vals
-  "Map a function over the values of a persistent map."
-  [f m]
-  (into (empty m) (for [[k v] m] [k (f v)])))
-
-
-;; I/O
-
-(def cast-fns
-  {Long sc/->long,
-   Double sc/->double,
-   Float sc/->float,
-   Integer sc/->int})
-
-(defn- types->cast-fns
-  [types]
-  (map-vals #(get cast-fns % identity) types))
-
-
-(defn read-csv
-  "Alpha - subject to change.
-  Reads CSV data into a core.matrix dataset.
-
-  Specify :types as a map from columns to types,
-  e.g. :types {:foo Long, :bar Double}, default type is String.
-
-  Other options are passed to semantic-csv/process
-  Note that :cast-fns will override :types.
-
-  See also incanter.io/read-dataset"
-  [filepath & {:as options}]
-  (let [defaults {:comment-re #"^$|^\#" ; skip blank lines and comments
-                  :cast-fns (if (:types options)
-                              (types->cast-fns (:types options))
-                              nil)}
-        options (->> (dissoc options :types)
-                     (into defaults)
-                     (apply concat))]
-    (with-open [reader (io/reader filepath)]
-      (let [data (apply sc/parse-and-process reader options)
-            col-names (-> (first data) keys sort)]
-        (md/dataset col-names data)))))
-
-
-(defn head
-  "Alpha - subject to change.
-  Returns the first part of a dataset (default 10)."
-  [dataset & {:keys [n] :or {n 10}}]
-  (md/dataset (take n (md/row-maps dataset))))
-
-
-(defn tail
-  "Alpha - subject to change.
-  Returns the last part of a dataset (default 10)."
-  [dataset & {:keys [n] :or {n 10}}]
-  (md/dataset (take-last n (md/row-maps dataset))))
-
-
 ;; Distributions
-
 
 (defn marginal-pmf
   "Alpha - subject to change.
@@ -802,5 +739,4 @@
   (to-mime [this]
     (mc/stream-to-string
       {:text/latex (str "$$" (formula->latex this) "$$")})))
-
 
