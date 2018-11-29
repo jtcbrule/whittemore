@@ -1,79 +1,67 @@
 (ns acausal.plot
-  "Plotting; currently wrappers around incanter.charts functions."
   (:require [acausal.util :refer [error]]
             [clojupyter.protocol.mime-convertible :as mc]
-            [incanter.charts :as chart])
-  (:import [org.jfree.chart JFreeChart]))
+            [incanter.charts :as charts])
+  (:import [org.jfree.chart JFreeChart ChartFrame]))
 
 
-(def ^:dynamic *chart-size* {:width 500, :height 310})
+(def ^:dynamic *plot-size* {:width 500, :height 310})
 
-(defn set-chart-size!
-  "Set the width and height for rendered JFreeChart."
+(defn set-plot-size!
+  "Set the width and height for rendered plot."
   [width height]
-  (alter-var-root #'*chart-size*
+  (alter-var-root #'*plot-size*
                   (fn [_] {:width width, :height height})))
 
 (extend-protocol mc/PMimeConvertible
   JFreeChart
   (to-mime [this]
     (mc/to-mime (.createBufferedImage
-                  this (:width *chart-size*) (:height *chart-size*)))))
+                  this (:width *plot-size*) (:height *plot-size*)))))
+
+(defn view-plot
+  "View a plot in a new window."
+  [chart]
+  (let [frame (ChartFrame. "JFreeChart" chart)]
+    (doto frame
+      (.setSize (:width *chart-size*) (:height *chart-size*))
+      (.setVisible true))
+    frame))
 
 
-;; TODO: refactor
-;; Add options for title
-(defn plot-univariate-categorical
-  "Returns a chart, given a map of vars to probability."
+(defn- sortable-map?
   [m]
-  (let [k (keys m)
+  (every? #(instance? java.lang.Comparable %)
+          (keys m)))
+
+
+(defn plot-pmf
+  "Returns a plot of the pmf, a map of categories to probability."
+  [pmf]
+  (let [m (cond
+            (sorted? pmf) pmf
+            (sortable-map? pmf) (into (sorted-map) pmf)
+            :else pmf)
+        k (map str (keys m))
         v (vals m)
-        bar (chart/bar-chart k v)]
+        bar (charts/bar-chart k v :x-label "" :y-label "")]
     (do
       (-> bar .getCategoryPlot .getRangeAxis (.setUpperBound 1.0))
       bar)))
 
 
-;; TODO: refactor as protocol?
-;; only for categorical at moment
-;; FIXME: inefficient
-(defn plot-distribution
-  "Returns a chart, plotting a distribution."
-  [distribution]
-  (let [pmf (:pmf distribution)
-        dimension (-> pmf keys first keys count)]
-    (if (not= dimension 1)
-      (error "Unsupported: cannot currently plot multivariate categorical")
-      (let [rv (-> pmf keys first keys first)
-            flattened-pmf (into (sorted-map)
-                            (for [[k v] pmf]
-                              [(rv k) v]))]
-        (plot-univariate-categorical flattened-pmf)))))
-
+;; test code
 
 (comment
 
-(def tmp {:a 0.2 :b 0.5 :c 0.3})
+(view-plot
+  (plot-pmf {:a 0.3 :b 0.2 :c 0.5}))
 
-(view
-  (plot-univariate-categorical tmp))
+(view-plot
+  (plot-pmf {:b 0.3 :a 0.2 :c 0.5}))
 
-(-> tmp plot-categorical .getCategoryPlot .getRangeAxis (.setUpperBound 1.0))
-
-(.getCategoryPlot (plot-categorical tmp))
-
-(view
-  (incanter.charts/bar-chart [:a :b :c] [1 2 3]
-                             :title "HI"))
-
-(def x (vec (range 10 50)))
-(def y (vec (map #(* % %) x)))
-
-(view
-      (incanter.charts/xy-plot x y))
-
-(view
-      (incanter.charts/scatter-plot x y))
-
+(view-plot
+  (plot-pmf {{:a 0} 0.3 {:a 1} 0.7}))
 
 )
+
