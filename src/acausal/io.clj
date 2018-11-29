@@ -2,7 +2,8 @@
   "Alpha - subject to change."
   (:require [acausal.html-table] ; Clojupyter protocol
             [acausal.util :refer [map-vals]]
-            [camel-snake-kebab "0.4.0"]
+            [camel-snake-kebab.core :refer [->kebab-case-keyword]]
+            [camel-snake-kebab.extras :refer [transform-keys]]
             [clojure.core.matrix.dataset :as md]
             [clojure.java.io :as io]
             [semantic-csv.core :as sc]))
@@ -19,9 +20,6 @@
   (map-vals #(get cast-fns % identity) types))
 
 
-;; TODO: add key-fn; currently headers of malformed JSON may be cast to
-;; invalid keywords, e.g. "Some header" becomes :Some header
-;; see, also: https://github.com/qerub/camel-snake-kebab
 (defn read-csv
   "Alpha - subject to change.
   Reads CSV data into a core.matrix dataset.
@@ -42,7 +40,8 @@
                      (into defaults)
                      (apply concat))]
     (with-open [reader (io/reader filepath)]
-      (let [data (apply sc/parse-and-process reader options)
+      (let [data (transform-keys ->kebab-case-keyword
+                   (apply sc/parse-and-process reader options))
             col-names (-> (first data) keys sort)]
         (md/dataset col-names data)))))
 

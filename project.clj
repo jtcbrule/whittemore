@@ -9,6 +9,7 @@
                  [org.clojars.didiercrunch/clojupyter "0.1.5"]
                  [net.mikera/core.matrix "0.62.0"]
                  [better-cond "1.0.1"]
+                 [camel-snake-kebab "0.4.0"]
                  [dorothy "0.0.6"]
                  [semantic-csv "0.1.0"]
                  [incanter/incanter-charts "1.9.3"]]
