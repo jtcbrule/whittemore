@@ -297,7 +297,7 @@
 
 (defn hedge [g s]
   "ID failure."
-  {:hedge [g s]})
+  {:hedge g :s s})
 
 
 ;; TODO: OPTIMIZE (e.g. collapse nested sums, marginalize out)
@@ -422,7 +422,7 @@
   [form]
   (cond
     (:hedge form)
-    (hash-set (:hedge form))
+    (hash-set form)
 
     (:sum form)
     (extract-hedges (:sum form))
@@ -460,7 +460,7 @@
 
 
 ;; A Fail record represents being unable to identify a query
-(defrecord Fail [])
+(defrecord Fail [cause])
 
 (defn fail?
   "Returns true iff f is an instance of Fail."
@@ -480,7 +480,7 @@
            hedges (extract-hedges form)]
        (if (empty? hedges)
          (into (->Formula) form)
-         (assoc (->Fail) :hedges hedges)))))
+         (->Fail hedges)))))
   ([m q d]
    (if (= (:joint d) (vertices m))
      (identify m q)
@@ -508,9 +508,6 @@
             (merge-with + m {(get k x) v}))]
    (reduce-kv f {} pmf)))
 
-
-;; TODO: refactor difference between bound and unbound formulas
-;; Have formuals implement IFn on bindings
 
 ;; TODO: docstring, additional methods (e.g. summary statistics)
 ;; Have two versions of estiamte? one for distribution, second argument
