@@ -509,51 +509,32 @@
    (reduce-kv f {} pmf)))
 
 
-;; TODO: docstring, additional methods (e.g. summary statistics)
-;; Have two versions of estiamte? one for distribution, second argument
-;; as a 'catch-all' keyword/map arguments?
-;; include plotting in this?
-;; may have to rename estimate, if we want a 'super-function' that permits
-;; keyword arguments
-;; TODO: rename estimate-distribution
-;; TODO: make it a two arg function? (i.e. require bound formulas)?
+;; TODO: add protocols for summary statistics
 (defprotocol Distribution
-  (estimate [distribution formula bindings]))
+  (estimate-distribution [distribution formula bindings options]))
+
+(defn estimate
+  "Estimate formula(distribution) evaluated at bindings.
+  Returns a new distribution. Options are passed to the underlying protocol."
+  [distribution formula bindings & options]
+  (estimate-distribution distribution formula bindings options))
 
 
-;; TODO: add (seperate namespace) a plot-distribution protocol
-;; TODO: protocol for summary statistics
-
-
-;; TODO: add 'smoothing' argument?
-;; Empirical name is good
-;; estimate yields an Estimated categorical
+;; TODO: add optional laplace smoothings
+;; TODO: auto-infer support
+;; TODO: accept plain seq of samples for constructor
+(defrecord Categorical [pmf])
 (defrecord EmpiricalCategorical [samples support])
 
-;; Rename?
-(defrecord EstimatedCategorical [pmf])
-
-
-;; TODO: rename?
-;; Normal kernel, plug-in or cross-validated bandwidth selection
-;; Inference via MCMC (random walk MH, or no-u-turn)
-;; yields a MCMCSample? Want to preserve distribution -> distribution
-(defrecord GaussianKDE [samples])
-
-
-;; TODO: add laplace smoothing (Jeffrey prior smoothing?)
-;; TODO: refactor as a protocol
-;; Refactor design?
-;; NOTE: support should be a map
-;; make support optional second argument? auto-infer support?
-;; rename empirical-categorical?
 (defn empirical-categorical
-  "Estimate a categorical distribution"
+  "Estimate a categorical distribution from a core.matrix dataset
+  Support must be provided as a map of variables to seq of values."
   [dataset & {:keys [support]}]
   (->EmpiricalCategorical
     (md/row-maps dataset)
     (map-vals set support)))
 
+; HERE
 
 ;; NOTE: helper function
 ;; expects full bindings
@@ -632,47 +613,22 @@
       (error "Unsupported formula type"))))
 
 
-;; TODO: refactor as protocol
-;; TODO: return a *distribution*
-;; how to handle bindings contianing all vars?
-;; ^ Technically, that's an error, but allow returning single probability val?
-;; test
+
+;; TODO: test
 ;; FIXME: doesn't check for bindings on the :p vars
 (extend-type EmpiricalCategorical
   Distribution
-  (estimate [distribution expr bindings]
+  (estimate-distribution [distribution expr bindings options]
     (let [support (:support distribution)
           all-vars (free expr)
           bound-vars (set (keys bindings))
           free-vars (difference all-vars bound-vars)
           new-bindings (all-bindings (select-keys support free-vars))]
-      (->EstimatedCategorical
+      (->Categorical
         (into {}
               (for [b new-bindings]
                 {b (estimate-categorical-point
                      distribution expr (merge bindings b))}))))))
-
-
-;; Distribution (estimate-distribution)
-;; make estimate a wrapper function
-;; distinguish bound vs. unbound formulas?
-
-;; TODO: refactor as protocol
-;; (identify model data query)
-;; (estimate distribution expr
-;; The uber-function that calls protocols estimate-query or estimate-formula
-;; Effectively double dispatch? Unneeded for categorical, but useful for
-;; continuous valued random variables?
-;; Consider defining the protocol to *only* support estimate,
-;; maybe the summary stats as well? (seperate protocol?)
-;; TODO: keep this function to handle optional arguments to protocol?
-;; can't have same name, though
-(comment
-(defn estimate
-  "Estimate expression expr with bindings, from distribution."
-  [distribution expr bindings]
-  nil)
-)
 
 
 ;; LaTeX
