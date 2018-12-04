@@ -474,7 +474,7 @@
   Data defaults to P(v), i.e. joint distribution over all variables in m."
   ([m q]
    (if (not (empty? (:given q)))
-     (error "Unsupported query (:given)")
+     (error "Unable to identify query (:given)")
    ;else
      (let [form (id (:p q) (:do q) {:p (vertices m)} m)
            hedges (extract-hedges form)]
@@ -510,12 +510,15 @@
 
 
 ;; TODO: add protocols for summary statistics
-(defprotocol Distribution
+(defprotocol EstimateDistribution
   (estimate-distribution [distribution formula bindings options]))
 
 (defn estimate
   "Estimate formula(distribution) evaluated at bindings.
-  Returns a new distribution. Options are passed to the underlying protocol."
+  Returns a new distribution. Options are passed to the underlying protocol.
+  
+  Note that estimate does not currently check that bindings are valid;
+  improper use may yield nonsensical estimated distributions."
   [distribution formula bindings & options]
   (estimate-distribution distribution formula bindings options))
 
@@ -523,10 +526,11 @@
 ;; TODO: add optional laplace smoothings
 ;; TODO: auto-infer support
 ;; TODO: accept plain seq of samples for constructor
+;; TODO: accept plain map (of pmf) for constructor
 (defrecord Categorical [pmf])
 (defrecord EmpiricalCategorical [samples support])
 
-(defn empirical-categorical
+(defn categorical
   "Estimate a categorical distribution from a core.matrix dataset
   Support must be provided as a map of variables to seq of values."
   [dataset & {:keys [support]}]
@@ -534,18 +538,14 @@
     (md/row-maps dataset)
     (map-vals set support)))
 
-; HERE
 
-;; NOTE: helper function
-;; expects full bindings
-;; TODO: rename?
-;; TODO: refactor?
-(defn estimate-categorical-query
-  "Estimate query from categorical distribution."
+(defn- estimate-categorical-query
+  "Helper function. Estimate the probability of a (bound) query,
+  {:p _, :given_ }, from an EmpiricalCategorical distribution."
   [distribution expr bindings]
   (cond
     (not (empty? (:do expr)))
-    (error "Cannot estimate causal query")
+    (error "Unable to estimate causal query (:do)")
 
     (not (subset? (union (:p expr) (:given expr)) (set (keys bindings))))
     (error "Unbound variables in query")
@@ -570,8 +570,7 @@
         (recur (rest samples) (inc matching) (inc total))))))
 
 
-;; TODO: test
-(defn all-bindings
+(defn- all-bindings
   "Given a map of vals -> collections, return a seq of maps that represents
   every possible instantiation."
   [m]
@@ -580,12 +579,10 @@
     (map #(zipmap (keys original) %) cart)))
 
 
-;; helper function for estimate-categorical-formula
-;; Assumes expr is a categorical formula, expects full bindings
-;; i.e. no unbound variables left in expr
-;; TODO: rename?
-;; TODO: write tests
-(defn estimate-categorical-point
+(defn- estimate-categorical-point
+  "Helper function. Evaluate a formula over a EmpiricalCategorical
+  distribution, given bindings for all variables.
+  Returns a single probability."
   [distribution expr bindings]
   (let [support (:support distribution)]
     (cond
@@ -600,8 +597,9 @@
       (:numer expr)
       (/ (estimate-categorical-point distribution (:numer expr) bindings)
          (estimate-categorical-point distribution (:denom expr) bindings))
-      
-      ;TODO: test
+
+      ; generate all bindings for variables in :sub
+      ; note the "lexical scoping" w/ merge
       (:sum expr)
       (let [sum-support (all-bindings (select-keys support (:sub expr)))
             new-bindings (map #(merge bindings %) sum-support)]
@@ -613,11 +611,9 @@
       (error "Unsupported formula type"))))
 
 
-
-;; TODO: test
-;; FIXME: doesn't check for bindings on the :p vars
+;; OPTIMIZE (implementation of helper functions is naive)
 (extend-type EmpiricalCategorical
-  Distribution
+  EstimateDistribution
   (estimate-distribution [distribution expr bindings options]
     (let [support (:support distribution)
           all-vars (free expr)
