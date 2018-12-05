@@ -35,13 +35,14 @@
           (keys m)))
 
 
-(defn plot-pmf
-  "Returns a plot of the pmf, a map of categories to probability."
-  [pmf]
+(defn plot-p-map
+  "Alpha - subject to change.
+  Returns a plot of the p-map, a map of categories to probabilities."
+  [p-map]
   (let [m (cond
-            (sorted? pmf) pmf
-            (sortable-map? pmf) (into (sorted-map) pmf)
-            :else pmf)
+            (sorted? p-map) p-map
+            (sortable-map? p-map) (into (sorted-map) p-map)
+            :else p-map)
         k (map str (keys m))
         v (vals m)
         bar (charts/bar-chart k v :x-label "" :y-label "")]
@@ -50,18 +51,46 @@
       bar)))
 
 
+(defn marginal-pmf
+  "Alpha - subject to change.
+  Returns the marginal distribution of variable x from multivariate pmf,
+  where pmf is a map of (map of variable to value) to probability."
+  [pmf x]
+  (let [f (fn [m k v]
+            (merge-with + m {(get k x) v}))]
+   (reduce-kv f {} pmf)))
+
+
+;; TODO: refactor as protocol?
+(defn plot-univariate
+  "Alpha - subject to change.
+  Plot a univariate probability distribution.
+  Currently, only categorical distributions are supported."
+  ([distribution]
+   (let [dimension (-> distribution :pmf keys first count)
+         variable (-> distribution :pmf keys first keys first)]
+     (if (not= dimension 1)
+       (error "dimension of pmf is not 1, unable to plot")
+       (plot-univariate distribution variable))))
+  ([distribution variable]
+   (plot-p-map (marginal-pmf (:pmf distribution) variable))))
+
+
+;(defn plot-comparison
+
+
 ;; test code
 
 (comment
 
 (view-plot
-  (plot-pmf {:a 0.3 :b 0.2 :c 0.5}))
+  (plot-p-map {:a 0.3 :b 0.2 :c 0.5}))
 
 (view-plot
-  (plot-pmf {:b 0.3 :a 0.2 :c 0.5}))
+  (plot-p-map {:b 0.3 :a 0.2 :c 0.5}))
 
 (view-plot
-  (plot-pmf {{:a 0} 0.3 {:a 1} 0.7}))
+  (plot-p-map {{:a 0} 0.3 {:a 1} 0.7}))
 
 )
 

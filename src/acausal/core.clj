@@ -510,6 +510,7 @@
 
 
 ;; TODO: add protocols for summary statistics
+;; rename? estimate-formula; add data-of
 (defprotocol EstimateDistribution
   (estimate-distribution [distribution formula bindings options]))
 
