@@ -764,11 +764,24 @@
       (= (count raw-str) 1) raw-str
       :else (format "\\text{%s}" raw-str))))
 
+(defn val->str
+  "Convert a value to a LaTeX string."
+  [v]
+  (cond
+    (number? v) (str v)
+    :else (format "\\text{\"%s\"}" v)))
 
 (defn set->str
   "Convert a set of nodes to a LaTeX string."
   [s]
   (string/join ", " (map node->str (sort s))))
+
+(defn map->str
+  "Convert a map of vars to vals to a LaTeX string."
+  [m]
+  (string/join
+    ", "
+    (map #(str (node->str (first %)) "=" (val->str (second %))) m)))
 
 
 (defn form->latex
@@ -799,13 +812,17 @@
     :else
     (error "Unable to compile to LaTeX")))
 
-;; FIXME: implement bindings
+
 (defn formula->latex
   [formula]
   (str
     (form->latex (:form formula))
-    " \\\\ "
-    "\\text{TODO: list bindings}"))
+    " \\\\ \\text{where: } "
+    (if (:bindings formula)
+      (map->str (:bindings formula))
+      "\\text{(unbound)}")
+    (if (:event formula)
+      (format "; %s" (map->str (:event formula))))))
 
 
 ;; Jupyter protocols
