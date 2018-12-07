@@ -614,22 +614,26 @@
     (estimate-distribution distribution formula options)))
 
 
+(defn infer-support
+  "Given a collection of maps, each with the same keys, return a map of
+  keys to set of possible values."
+  [maps]
+  (let [init (map-vals (fn [_] (hash-set)) (first maps))]
+    (reduce #(merge-with conj %1 %2) init maps)))
+
+
 ;; TODO: add optional laplace smoothings
-;; TODO: auto-infer support, handle samples not in support
 ;; TODO: accept plain seq of samples for constructor
 ;; TODO: accept plain map (of pmf) for constructor
 (defrecord Categorical [pmf])
 (defrecord EmpiricalCategorical [samples support])
 
 (defn categorical
-  "Estimate a categorical distribution from a core.matrix dataset
-  Support must be provided as a map of variables to seq of values."
-  [dataset & {:keys [support]}]
-  (if (nil? support)
-    (error "Missing :support"))
-  (->EmpiricalCategorical
-    (md/row-maps dataset)
-    (map-vals set support)))
+  "Estimate a categorical distribution from a core.matrix dataset"
+  [dataset & {:as options}]
+  (let [samples (md/row-maps dataset)
+        support (infer-support samples)]
+    (->EmpiricalCategorical samples support)))
 
 
 (defn- estimate-categorical-query
