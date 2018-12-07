@@ -614,7 +614,7 @@
     (estimate-distribution distribution formula options)))
 
 
-(defn infer-support
+(defn- all-vals
   "Given a collection of maps, each with the same keys, return a map of
   keys to set of possible values."
   [maps]
@@ -632,7 +632,7 @@
   "Estimate a categorical distribution from a core.matrix dataset"
   [dataset & {:as options}]
   (let [samples (md/row-maps dataset)
-        support (infer-support samples)]
+        support (all-vals samples)]
     (->EmpiricalCategorical samples support)))
 
 
