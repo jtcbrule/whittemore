@@ -1,7 +1,7 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
   (:require [acausal.graphviz :as viz]
-            [acausal.util :refer [error map-vals]]
+            [acausal.util :refer [warn error map-vals]]
             [better-cond.core :as b]
             [clojupyter.protocol.mime-convertible :as mc]
             [clojure.core.matrix.dataset :as md]
@@ -54,6 +54,8 @@
           :when (not= i j)]
       #{i j})))
 
+
+;; Model
 
 ;; TODO: validate arguments to constructor
 (defrecord Model [pa bi])
@@ -228,14 +230,6 @@
                (conj components current-component))))))
 
 
-
-(defn find-superset
-  "Returns a superset of s or nil if no such superset exists.
-  coll is a collection of sets."
-  [coll s]
-  (first (filter #(subset? s %) coll)))
-
-
 (defn sources
   "Returns a set of all nodes in dag g which have zero in-degree.
   Assumes that g is of the form {nodes #{parents}}."
@@ -271,6 +265,14 @@
                  (into result (sort frontier))))))))
 
 
+;; Utility functions for ID
+
+(defn find-superset
+  "Returns a superset of s or nil if no such superset exists.
+  coll is a collection of sets."
+  [coll s]
+  (first (filter #(subset? s %) coll)))
+
 (defn predecessors
   "Returns the set of items before v in ordering.
   Throws an exception if v is not in ordering."
@@ -281,23 +283,14 @@
       before)))
 
 
-;; A formula is a recursive map of:
-;; {:prod #{formulas}}
-;; {:sum formula, :sub #{vars}}
-;; {:numer formula, :denom formula
+;; Support functions for ID
+
+;; A 'form' is a recursive map of:
+;; {:prod #{forms}}
+;; {:sum forms, :sub #{vars}}
+;; {:numer form, :denom form
 ;; {:p #{vars}, :given #{vars}}
 ;; {:p #{vars}}
-(defrecord Formula [])
-
-(defn formula?
-  "Returns true iff f is a Formula."
-  [f]
-  (instance? Formula f))
-
-
-(defn hedge [g s]
-  "ID failure."
-  {:hedge g :s s})
 
 
 ;; TODO: OPTIMIZE (e.g. collapse nested sums, marginalize out)
@@ -320,7 +313,7 @@
 
 
 (defn free
-  "Returns the set of free variables in formula."
+  "Returns the set of free variables in a form."
   [form]
   (cond
     (:given form)
@@ -356,9 +349,14 @@
      :denom denom}))
 
 
+(defn hedge [g s]
+  "ID failure."
+  {:hedge g :s s})
+
+
 (defn id
   "Shpitser's ID algorithm. Call with p = {:p (vertices g)}.
-  Returns a formula, with any hedges inline."
+  Returns a form, with any hedges inline."
   [y x p g]
   (b/cond
     :let [v (vertices g)]
@@ -418,7 +416,7 @@
 
 
 (defn extract-hedges
-  "Walk the formula and return the set of hedges inline."
+  "Walk the form and return the set of hedges inline."
   [form]
   (cond
     (:hedge form)
@@ -442,13 +440,61 @@
     (error "Unsupported formula type")))
 
 
-(defrecord Query [p do given])
+(defn- vars-of
+  [coll]
+  (if (map? coll)
+    (set (keys coll))
+    (set coll)))
 
+
+;; form is map of {:p #{vars}, :do #{vars}, :given #{vars}}
+(defrecord Query [form])
+
+(defn unbound-query
+  "Returns a representation of a causal effect query without variable bindings.
+  Formulas returned from (identify ...) will be unbound."
+  [effect do given]
+  (->Query {:p (vars-of effect) :do (vars-of do) :given (vars-of given)}))
+
+(defn bound-query
+  "Returns a representation of a causal effect query with variable bindings.
+  do and given should be maps. effect should be a set or vector.
+  Formulas returned from (identify ...) will be bound, i.e. suitable as a
+  parameter for (estimate ...)"
+  [effect do given]
+  (assoc 
+    (->Query {:p (vars-of effect) :do (vars-of do) :given (vars-of given)})
+    :bindings (merge do given)))
+
+(defn event-query
+  "Returns a representation of a causal effect query with variable bindings.
+  Arguments to effect, given, do should be maps."
+  [effect do given]
+  (assoc 
+    (->Query {:p (vars-of effect) :do (vars-of do) :given (vars-of given)})
+    :bindings (merge do given)
+    :event effect))
+
+;; TODO: check
 (defn q
-  "Query. Returns a representation of the causal effect query,
-  e.g. (q [:y_1 :y_2] :do [:x]) => P(y_1, y_2 | do(x))"
-  [effect & {:keys [do given] :or {do [] given []}}]
-  (->Query (set effect) (set do) (set given)))
+  "Query. Returns a representation of the causal effect query.
+  Prefer calling this over the *-query constructors.
+  q does not currently check that the bindings are consistent."
+  [effect & {:keys [do given] :or {do {} given {}}}]
+  (cond
+    (and (map? effect) (map? do) (map? given))
+    (event-query effect do given)
+
+    (and (map? do) (map? given))
+    (bound-query effect do given)
+
+    (or (and (empty? do) (not (map? given)))
+        (and (empty? given) (not (map? do)))
+        (and (not (map? given)) (not map? do)))
+    (unbound-query effect do given)
+
+    :else
+    (error "Unsupported query type (check bindings to q)")))
 
 
 (defrecord Data [joint])
@@ -457,6 +503,15 @@
   "Returns a representation of the known joint probability function."
   [v]
   (->Data (set v)))
+
+
+;; Formula wraps a 'form'
+(defrecord Formula [form])
+
+(defn formula?
+  "Returns true iff f is a Formula."
+  [f]
+  (instance? Formula f))
 
 
 ;; A Fail record represents being unable to identify a query
@@ -472,29 +527,40 @@
 (defn identify
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v), i.e. joint distribution over all variables in m."
-  ([m q]
-   (if (not (empty? (:given q)))
-     (error "Unable to identify query (:given)")
-   ;else
-     (let [form (id (:p q) (:do q) {:p (vertices m)} m)
-           hedges (extract-hedges form)]
-       (if (empty? hedges)
-         (into (->Formula) form)
-         (->Fail hedges)))))
-  ([m q d]
-   (if (= (:joint d) (vertices m))
-     (identify m q)
-     (let [latents (difference (vertices m) (:joint d))
-           projected-m (latent-projection m latents)]
-       (identify projected-m q)))))
+  ([model query]
+   (let [q (:form query)]
+     (if (not (empty? (:given q)))
+       (error "Unable to identify query (:given)")
+     ;else
+       (let [form (id (:p q) (:do q) {:p (vertices model)} model)
+             hedges (extract-hedges form)]
+         (cond
+           (not (empty? hedges))
+           (->Fail hedges)
+
+           (:event query)
+           (assoc (->Formula form) :event (:event query)
+                                   :bindings (:bindings query))
+
+           (:bindings query)
+           (assoc (->Formula form) :bindings (:bindings query))
+
+           :else
+           (->Formula form))))))
+  ([model query data]
+   (if (= (:joint data) (vertices model))
+     (identify model query)
+     (let [latents (difference (vertices model) (:joint data))
+           projected-model (latent-projection model latents)]
+       (identify projected-model query)))))
 
 
 (defn identifiable?
   "True iff q is identifiable in m from P(v)"
-  ([m q]
-    (formula? (identify m q)))
-  ([m q d]
-    (formula? (identify m q d))))
+  ([model query]
+    (formula? (identify model query)))
+  ([model query data]
+    (formula? (identify model query data))))
 
 
 ;; Distributions
@@ -509,23 +575,52 @@
    (reduce-kv f {} pmf)))
 
 
-;; TODO: add protocols for summary statistics
-;; rename? estimate-formula; add data-of
-(defprotocol EstimateDistribution
-  (estimate-distribution [distribution formula bindings options]))
+(defn bind
+  "Apply (estimate) bindings to unbound formula.
+  bind does not currently check that the bindings are valid."
+  [formula bindings]
+  (if (:bindings formula)
+    (warn "WARNING: formula is already bound:" (:bindings formula)
+          ", being replaced by:" bindings))
+  (assoc formula :bindings bindings))
 
+
+;; TODO: add protocols for summary statistics
+(defprotocol Distribution
+  (estimate-distribution [distribution formula options])
+  (measure-probability [distribution event options])
+  (signature [distribution]))
+
+
+(defn measure
+  "Returns the probability of the given event."
+  [distribution event & {:as options}]
+  (measure-probability distribution event options))
+
+
+;; TODO: test
 (defn estimate
-  "Estimate formula(distribution) evaluated at bindings.
-  Returns a new distribution. Options are passed to the underlying protocol.
+  "Estimate formula(distribution). Returns a new distribution.
+  Options are passed to the underlying protocol.
   
   Note that estimate does not currently check that bindings are valid;
   improper use may yield nonsensical estimated distributions."
-  [distribution formula bindings & options]
-  (estimate-distribution distribution formula bindings options))
+  [distribution formula & {:as options}]
+  (cond
+    (empty? (:bindings formula))
+    (error "Unbound formula, cannot estimate")
+
+    (:event formula)
+    (-> distribution
+        (estimate (dissoc formula :event))
+        (measure (:event formula)))
+
+    :else
+    (estimate-distribution distribution formula options)))
 
 
 ;; TODO: add optional laplace smoothings
-;; TODO: auto-infer support
+;; TODO: auto-infer support, handle samples not in support
 ;; TODO: accept plain seq of samples for constructor
 ;; TODO: accept plain map (of pmf) for constructor
 (defrecord Categorical [pmf])
@@ -535,6 +630,8 @@
   "Estimate a categorical distribution from a core.matrix dataset
   Support must be provided as a map of variables to seq of values."
   [dataset & {:keys [support]}]
+  (if (nil? support)
+    (error "Missing :support"))
   (->EmpiricalCategorical
     (md/row-maps dataset)
     (map-vals set support)))
@@ -613,11 +710,14 @@
 
 
 ;; OPTIMIZE (implementation of helper functions is naive)
+;; FIXME
 (extend-type EmpiricalCategorical
-  EstimateDistribution
-  (estimate-distribution [distribution expr bindings options]
-    (let [support (:support distribution)
-          all-vars (free expr)
+  Distribution
+  (estimate-distribution [distribution formula options]
+    (let [form (:form formula)
+          bindings (:bindings formula)
+          support (:support distribution)
+          all-vars (free form)
           bound-vars (set (keys bindings))
           free-vars (difference all-vars bound-vars)
           new-bindings (all-bindings (select-keys support free-vars))]
@@ -625,7 +725,32 @@
         (into {}
               (for [b new-bindings]
                 {b (estimate-categorical-point
-                     distribution expr (merge bindings b))}))))))
+                     distribution form (merge bindings b))})))))
+  (measure-probability [distribution event options]
+    (error "Unimplemented"))
+  (signature [distribution]
+    (-> distribution :support keys data)))
+
+
+;; FIXME
+(extend-type Categorical
+  Distribution
+  (estimate-distribution [distribution formula options]
+    (error "Unimplemented"))
+  (measure-probability [distribution event options]
+    (get (:pmf distribution) event))
+  (signature [distribution]
+    (-> distribution :pmf keys first keys data)))
+
+
+;; infer
+
+(defn infer
+  "Syntactic sugar for identify and estimate."
+  [model query distribution & {:as options}]
+  (let [data (signature distribution)
+        formula (identify model query data)]
+    (estimate distribution formula)))
 
 
 ;; LaTeX
@@ -646,33 +771,41 @@
   (string/join ", " (map node->str (sort s))))
 
 
-(defn formula->latex
-  "'Compile' a formula to a valid LaTeX math string."
-  [formula]
+(defn form->latex
+  "Helper function to compile form to a valid LaTeX math string."
+  [form]
   (cond
-    (:sum formula)
+    (:sum form)
     (format "\\left[ \\sum_{%s} %s \\right]"
-            (set->str (:sub formula))
-            (formula->latex (:sum formula)))
+            (set->str (:sub form))
+            (form->latex (:sum form)))
 
-    (:prod formula)
-    (string/join " " (map formula->latex (:prod formula)))
+    (:prod form)
+    (string/join " " (map form->latex (:prod form)))
 
-    (:numer formula)
+    (:numer form)
     (format "\\frac{%s}{%s}"
-            (formula->latex (:numer formula))
-            (formula->latex (:denom formula)))
+            (form->latex (:numer form))
+            (form->latex (:denom form)))
 
-    (not (empty? (:given formula)))
+    (not (empty? (:given form)))
     (format "P(%s \\mid %s)"
-            (set->str (:p formula))
-            (set->str (:given formula)))
+            (set->str (:p form))
+            (set->str (:given form)))
 
-    (:p formula)
-    (format "P(%s)" (set->str (:p formula)))
+    (:p form)
+    (format "P(%s)" (set->str (:p form)))
 
     :else
     (error "Unable to compile to LaTeX")))
+
+;; FIXME: implement bindings
+(defn formula->latex
+  [formula]
+  (str
+    (form->latex (:form formula))
+    " \\\\ "
+    "\\text{TODO: list bindings}"))
 
 
 ;; Jupyter protocols
