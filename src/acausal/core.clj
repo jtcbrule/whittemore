@@ -62,7 +62,8 @@
 (defrecord Model [pa bi])
 
 (defn model
-  "Returns a new causal diagram."
+  "Returns a new causal diagram.
+  model does not currently check that its arguments are valid."
   [dag & confounding]
   (let [bi (apply union (map pairs-of confounding))
         pa (into {} (for [[k v] dag] [k (set v)]))]
@@ -284,8 +285,6 @@
       before)))
 
 
-;; Support functions for ID
-
 ;; A 'form' is a recursive map of:
 ;; {:prod #{forms}}
 ;; {:sum forms, :sub #{vars}}
@@ -294,7 +293,7 @@
 ;; {:p #{vars}}
 
 
-;; TODO: OPTIMIZE (e.g. collapse nested sums, marginalize out)
+;; TODO: simplifications (e.g. collapse nested sums, marginalize out)
 (defn sum
   "Returns \\sum_{sub} p"
   [sub p]
@@ -337,7 +336,7 @@
 
 
 ;; TODO: refactor?
-;; TODO: OPTIMIZE
+;; TODO: simplifications
 (defn- given-pi
   "Returns P(vi \\mid v_{pi}^(i-1)), in terms of probability distribution p.
   pi is a topological order of nodes in G"
@@ -577,7 +576,7 @@
 
 
 (defn bind
-  "Apply (estimate) bindings to unbound formula.
+  "Associate (estimate) bindings with unbound formula.
   bind does not currently check that the bindings are valid."
   [formula bindings]
   (if (:bindings formula)
@@ -586,17 +585,18 @@
   (assoc formula :bindings bindings))
 
 
-
 (defn measure
   "Returns the probability of the given event."
   [distribution event & {:as options}]
   (measure-probability distribution event options))
 
 
-;; TODO: test
 (defn estimate
-  "Estimate formula(distribution). Returns a new distribution.
-  Options are passed to the underlying protocol.
+  "Estimate the result of applying the bound formula to distribution.
+  Returns a new distribution. Options are passed to the underlying protocol.
+
+  If bindings for :event are included in the formula, then estimate acts
+  as 'syntatic sugar' for (measure (estimate distribution bindings) event).
   
   Note that estimate does not currently check that bindings are valid;
   improper use may yield nonsensical estimated distributions."
@@ -629,7 +629,7 @@
 (defrecord EmpiricalCategorical [samples support])
 
 (defn categorical
-  "Estimate a categorical distribution from a core.matrix dataset"
+  "Estimate a categorical distribution from a clojure.core.matrix dataset"
   [dataset & {:as options}]
   (let [samples (md/row-maps dataset)
         support (all-vals samples)]
