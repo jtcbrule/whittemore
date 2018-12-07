@@ -1,5 +1,6 @@
 (ns acausal.core
   (:refer-clojure :exclude [ancestors parents])
+  (:use [acausal.protocols])
   (:require [acausal.graphviz :as viz]
             [acausal.util :refer [warn error map-vals]]
             [better-cond.core :as b]
@@ -475,7 +476,7 @@
     :bindings (merge do given)
     :event effect))
 
-;; TODO: check
+
 (defn q
   "Query. Returns a representation of the causal effect query.
   Prefer calling this over the *-query constructors.
@@ -530,7 +531,7 @@
   ([model query]
    (let [q (:form query)]
      (if (not (empty? (:given q)))
-       (error "Unable to identify query (:given)")
+       (error "Unsupported query type (:given)")
      ;else
        (let [form (id (:p q) (:do q) {:p (vertices model)} model)
              hedges (extract-hedges form)]
@@ -584,12 +585,6 @@
           ", being replaced by:" bindings))
   (assoc formula :bindings bindings))
 
-
-;; TODO: add protocols for summary statistics
-(defprotocol Distribution
-  (estimate-distribution [distribution formula options])
-  (measure-probability [distribution event options])
-  (signature [distribution]))
 
 
 (defn measure
