@@ -548,7 +548,7 @@
 
            :else
            (->Formula form))))))
-  ([model query data]
+  ([model data query]
    (if (= (:joint data) (vertices model))
      (identify model query)
      (let [latents (difference (vertices model) (:joint data))
@@ -560,8 +560,8 @@
   "True iff q is identifiable in m from P(v)"
   ([model query]
     (formula? (identify model query)))
-  ([model query data]
-    (formula? (identify model query data))))
+  ([model data query]
+    (formula? (identify model data query))))
 
 
 ;; Distributions
@@ -829,9 +829,9 @@
 
 (defn infer
   "Syntactic sugar for identify and estimate."
-  [model query distribution & {:as options}]
+  [model distribution query & {:as options}]
   (let [data (signature distribution)
-        formula (identify model query data)]
+        formula (identify model data query)]
     (estimate distribution formula)))
 
 

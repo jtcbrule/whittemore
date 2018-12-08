@@ -194,7 +194,12 @@
     (not= (latent-projection wainer #{:z_0}) wainer)))
 
 (deftest wainer-identification
-  (is (formula? (identify wainer-latent (q [:y] :do [:x])))))
+  (is (formula? (identify wainer-latent (q [:y] :do [:x]))))
+  (is (formula? (identify
+                  wainer
+                  (data [:x :y :z_1 :z_2 :z_3])
+                  (q [:y] :do [:x]))))
+  (is (fail? (identify wainer (data [:x :y]) (q [:y] :do [:x])))))
 
 
 (def front-door
@@ -217,8 +222,8 @@
     (=
      (identify
        front-door
-       (q [:y] :do [:x])
-       (data [:x :y :z]))
+       (data [:x :y :z])
+       (q [:y] :do [:x]))
      (identify
        front-door-latent
        (q [:y] :do [:x]))
