@@ -468,7 +468,8 @@
 
 (defn event-query
   "Returns a representation of a causal effect query with variable bindings.
-  Arguments to effect, given, do should be maps."
+  do and given should be maps. effect should be a map, and will be bound to
+  the :event key of the resulting query."
   [effect do given]
   (assoc 
     (->Query {:p (vars-of effect) :do (vars-of do) :given (vars-of given)})
@@ -565,18 +566,10 @@
 
 ;; Distributions
 
-(defn marginal-pmf
-  "Alpha - subject to change.
-  Returns the marginal distribution of variable x from multivariate pmf,
-  where pmf is a map of (map of variable to value) to probability."
-  [pmf x]
-  (let [f (fn [m k v]
-            (merge-with + m {(get k x) v}))]
-   (reduce-kv f {} pmf)))
-
 
 (defn bind
-  "Associate (estimate) bindings with unbound formula.
+  "Associate bindings with unbound formula, returning a formula suitable
+  as an argument for (estimate ...).
   bind does not currently check that the bindings are valid."
   [formula bindings]
   (if (:bindings formula)
@@ -586,7 +579,8 @@
 
 
 (defn measure
-  "Returns the probability of the given event."
+  "Returns the probability of the given event.
+  Options are passed to the underlying protocol."
   [distribution event & {:as options}]
   (measure-probability distribution event options))
 
@@ -602,7 +596,7 @@
   improper use may yield nonsensical estimated distributions."
   [distribution formula & {:as options}]
   (cond
-    (empty? (:bindings formula))
+    (nil? (:bindings formula))
     (error "Unbound formula, cannot estimate")
 
     (:event formula)
@@ -614,8 +608,9 @@
     (estimate-distribution distribution formula options)))
 
 
-(defn- all-vals
-  "Given a collection of maps, each with the same keys, return a map of
+(defn all-vals
+  "Alpha - subject to change.
+  Given a collection of maps, each with the same keys, return a map of
   keys to set of possible values."
   [maps]
   (let [init (map-vals (fn [_] (hash-set)) (first maps))]
@@ -636,9 +631,9 @@
     (->EmpiricalCategorical samples support)))
 
 
-(defn- estimate-categorical-query
-  "Helper function. Estimate the probability of a (bound) query,
-  {:p _, :given_ }, from an EmpiricalCategorical distribution."
+(defn- empirical-categorical-p
+  "Helper function. Estimate the probability of an expression of form,
+  {:p _, :given _}, from an EmpiricalCategorical distribution."
   [distribution expr bindings]
   (cond
     (not (empty? (:do expr)))
@@ -648,7 +643,8 @@
     (error "Unbound variables in query")
 
     :else
-    (loop [samples (:samples distribution), matching 0, total 0]
+    (loop [samples (:samples distribution),
+           matching 0.0, total 0.0] ; force Double precision
       (cond
         (nil? (first samples))
         (/ matching total)
@@ -676,7 +672,7 @@
     (map #(zipmap (keys original) %) cart)))
 
 
-(defn- estimate-categorical-point
+(defn- empirical-categorical-f
   "Helper function. Evaluate a formula over a EmpiricalCategorical
   distribution, given bindings for all variables.
   Returns a single probability."
@@ -684,16 +680,16 @@
   (let [support (:support distribution)]
     (cond
       (:p expr)
-      (estimate-categorical-query distribution expr bindings)
+      (empirical-categorical-p distribution expr bindings)
 
       (:prod expr)
       (reduce *
-              (map #(estimate-categorical-point distribution % bindings)
+              (map #(empirical-categorical-f distribution % bindings)
                    (:prod expr)))
 
       (:numer expr)
-      (/ (estimate-categorical-point distribution (:numer expr) bindings)
-         (estimate-categorical-point distribution (:denom expr) bindings))
+      (/ (empirical-categorical-f distribution (:numer expr) bindings)
+         (empirical-categorical-f distribution (:denom expr) bindings))
 
       ; generate all bindings for variables in :sub
       ; note the "lexical scoping" w/ merge
@@ -701,15 +697,14 @@
       (let [sum-support (all-bindings (select-keys support (:sub expr)))
             new-bindings (map #(merge bindings %) sum-support)]
         (reduce +
-                (map #(estimate-categorical-point distribution (:sum expr) %)
+                (map #(empirical-categorical-f distribution (:sum expr) %)
                      new-bindings)))
 
       :else
       (error "Unsupported formula type"))))
 
 
-;; OPTIMIZE (implementation of helper functions is naive)
-;; FIXME
+;; OPTIMIZE (implementation is naive)
 (extend-type EmpiricalCategorical
   Distribution
   (estimate-distribution [distribution formula options]
@@ -723,19 +718,107 @@
       (->Categorical
         (into {}
               (for [b new-bindings]
-                {b (estimate-categorical-point
+                {b (empirical-categorical-f
                      distribution form (merge bindings b))})))))
   (measure-probability [distribution event options]
-    (error "Unimplemented"))
+    (measure-probability ; polymorphic recursion on Categorical
+      (estimate-distribution distribution (q (keys event)) options)
+      event {}))
   (signature [distribution]
     (-> distribution :support keys data)))
 
 
-;; FIXME
+(defn exact-categorical-marginal
+  "Helper function. Estimate the marginal probability of a Categorical
+  distribution evaluated at bindings."
+  [distribution bindings]
+  (reduce
+    (fn [total mv]
+      (let [m (first mv)
+            v (second mv)]
+        (if (= (select-keys m (keys bindings)) bindings)
+          (+ total v)
+          total)))
+    0
+    (:pmf distribution)))
+
+
+(defn- exact-categorical-p
+  "Helper function. Estimate the probability of an expression of form,
+  {:p _, :given _}, from an Categorical distribution."
+  [distribution expr bindings]
+  (cond
+    (not (empty? (:do expr)))
+    (error "Unable to estimate causal query (:do)")
+
+    (not (subset? (union (:p expr) (:given expr)) (set (keys bindings))))
+    (error "Unbound variables in query")
+
+    (:given expr)
+    (/
+     (exact-categorical-p
+       distribution
+       {:p (union (:p expr) (:given expr))}
+       bindings)
+     (exact-categorical-p distribution {:p (:given expr)} bindings))
+
+    (:p expr)
+    (exact-categorical-marginal distribution (select-keys bindings (:p expr)))
+
+    :else
+    (error "Unsupported formula type")))
+
+
+(defn- exact-categorical-f
+  "Helper function. Evaluate a formula over a Categorical
+  distribution, given bindings for all variables.
+  Returns a single probability."
+  [distribution expr bindings]
+  (let [support (:support distribution)] ; hack, refactor
+    (cond
+      (:p expr)
+      (exact-categorical-p distribution expr bindings)
+
+      (:prod expr)
+      (reduce *
+              (map #(exact-categorical-f distribution % bindings)
+                   (:prod expr)))
+
+      (:numer expr)
+      (/ (exact-categorical-f distribution (:numer expr) bindings)
+         (exact-categorical-f distribution (:denom expr) bindings))
+
+      ; generate all bindings for variables in :sub
+      ; note the "lexical scoping" w/ merge
+      (:sum expr)
+      (let [sum-support (all-bindings (select-keys support (:sub expr)))
+            new-bindings (map #(merge bindings %) sum-support)]
+        (reduce +
+                (map #(exact-categorical-f distribution (:sum expr) %)
+                     new-bindings)))
+
+      :else
+      (error "Unsupported formula type"))))
+
+
+;; OPTIMIZE (implementation is naive)
+;; TODO: refactor, deduplicate code from EmpiricalCategorical
 (extend-type Categorical
   Distribution
   (estimate-distribution [distribution formula options]
-    (error "Unimplemented"))
+    (let [form (:form formula)
+          bindings (:bindings formula)
+          support (all-vals (keys (:pmf distribution)))
+          distribution (assoc distribution :support support) ; hack
+          all-vars (free form)
+          bound-vars (set (keys bindings))
+          free-vars (difference all-vars bound-vars)
+          new-bindings (all-bindings (select-keys support free-vars))]
+      (->Categorical
+        (into {}
+              (for [b new-bindings]
+                {b (exact-categorical-f
+                     distribution form (merge bindings b))})))))
   (measure-probability [distribution event options]
     (get (:pmf distribution) event))
   (signature [distribution]
