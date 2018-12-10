@@ -1,34 +1,41 @@
-# acausal
+# Whittemore
 
 Causal programming in Clojure.
 
-## Dependencies
 
-### Required
+## Getting started
 
-[Java](https://openjdk.java.net/install/) (OpenJDK version 8 is recommended):
+The easiest way to get started is with [Leiningen](https://leiningen.org) (requires [Java](https://openjdk.java.net/install/), OpenJDK 8 recommended). Once Leiningen is installed, create a new project:
 
-    $ sudo apt install openjdk-8-jdk
+    lein new whittemore demo
+    cd demo
 
-[Leiningen](https://leiningen.org):
+A REPL can be started from within the project directory:
 
-    $ curl --create-dirs --output ~/bin/lein https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein
+    lein repl
 
-### Recommended
+Rich output (HTML, images, LaTeX) is available in [Jupyter](https://jupyter.org/install) notebooks. Once Jupyter installed:
 
-[Jupyter](https://jupyter.org/install)
+    lein jupyter install-kernel # first time only
+    lein jupyter notebook
 
-    $ sudo apt install python3-pip
-    $ pip3 install --user jupyter
-
-[Graphviz](https://graphviz.org/download/)
-
-    $ sudo apt install graphviz
+[Graphviz](https://graphviz.org/download/) is recommended for rendering causal diagrams. Whittemore will automatically fallback to [viz.cljc](https://github.com/jebberjeb/viz.cljc) if Graphviz is not installed, but this is much slower.
 
 
-## Usage
+## Example Usage
 
-FIXME
+    (use 'whittemore.core)
+    
+    (identifiable?
+      (model
+        {:x [],
+         :z [:x],
+         :y [:z]}
+        #{:x :y})
+      (data [:x :y :z])
+      (q [:y] :do [:x]))
+    ;=> true
+
 
 ## License
 
@@ -36,3 +43,4 @@ Copyright © 2018 Joshua Brule
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
+
