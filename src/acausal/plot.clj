@@ -2,7 +2,7 @@
   (:require [acausal.util :refer [error]]
             [clojupyter.protocol.mime-convertible :as mc]
             [incanter.charts :as charts])
-  (:import [org.jfree.chart JFreeChart ChartFrame]))
+  (:import (org.jfree.chart JFreeChart ChartFrame)))
 
 
 (def ^:dynamic *plot-size* {:width 500, :height 310})
@@ -62,10 +62,12 @@
 
 
 ;; TODO: refactor as protocol?
+;; TODO: support EmpiricalCategorical
 (defn plot-univariate
   "Alpha - subject to change.
   Plot a univariate probability distribution.
-  Currently, only categorical distributions are supported."
+  Currently, only Categorical distributions are supported.
+  (EmpirialCategorical is not supported.)"
   ([distribution]
    (let [dimension (-> distribution :pmf keys first count)
          variable (-> distribution :pmf keys first keys first)]
@@ -74,9 +76,6 @@
        (plot-univariate distribution variable))))
   ([distribution variable]
    (plot-p-map (marginal-pmf (:pmf distribution) variable))))
-
-
-;(defn plot-comparison
 
 
 ;; test code
