@@ -450,6 +450,11 @@
 ;; form is map of {:p #{vars}, :do #{vars}, :given #{vars}}
 (defrecord Query [form])
 
+(defn query?
+  "Returns true iff f is an instance of Query."
+  [f]
+  (instance? Query f))
+
 (defn unbound-query
   "Returns a representation of a causal effect query without variable bindings.
   Formulas returned from (identify ...) will be unbound."
@@ -505,6 +510,11 @@
   [v]
   (->Data (set v)))
 
+(defn data?
+  "Returns true iff f is an instance of Fail."
+  [f]
+  (instance? Data f))
+
 
 ;; Formula wraps a 'form'
 (defrecord Formula [form])
@@ -530,9 +540,10 @@
   Data defaults to P(v), i.e. joint distribution over all variables in m."
   ([model query]
    (let [q (:form query)]
-     (if (not (empty? (:given q)))
-       (error "Unsupported query type (:given)")
-     ;else
+     (cond
+       (not (query? query)) (error "Unsupported Query type (check args)")
+       (not (empty? (:given q))) (error "Unsupported Query type (:given)")
+     :else
        (let [form (id (:p q) (:do q) {:p (vertices model)} model)
              hedges (extract-hedges form)]
          (cond
@@ -549,8 +560,10 @@
            :else
            (->Formula form))))))
   ([model data query]
-   (if (= (:joint data) (vertices model))
-     (identify model query)
+   (cond
+     (not (data? data)) (error "Unsupported Data type (check args)")
+     (= (:joint data) (vertices model)) (identify model query)
+   :else
      (let [latents (difference (vertices model) (:joint data))
            projected-model (latent-projection model latents)]
        (identify projected-model query)))))
@@ -728,7 +741,7 @@
     (-> distribution :support keys data)))
 
 
-(defn exact-categorical-marginal
+(defn- exact-categorical-marginal
   "Helper function. Estimate the marginal probability of a Categorical
   distribution evaluated at bindings."
   [distribution bindings]
@@ -827,6 +840,7 @@
 
 ;; infer
 
+;; TODO: add more options, macro form with _
 (defn infer
   "Syntactic sugar for identify and estimate."
   [model distribution query & {:as options}]
