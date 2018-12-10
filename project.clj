@@ -1,6 +1,6 @@
-(defproject acausal "0.1.0-SNAPSHOT"
+(defproject whittemore "0.1.0-SNAPSHOT"
   :description "Causal programming in Clojure"
-  :url "http://example.com/FIXME"
+  :url "https://github.com/jtcbrule/whittemore"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
