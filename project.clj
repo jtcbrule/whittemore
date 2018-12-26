@@ -1,4 +1,4 @@
-(defproject whittemore "0.1.0-SNAPSHOT"
+(defproject whittemore "0.1.0"
   :description "Causal programming in Clojure"
   :url "https://github.com/jtcbrule/whittemore"
   :license {:name "Eclipse Public License"
