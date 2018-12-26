@@ -1,5 +1,6 @@
 (ns whittemore.plot
-  (:require [whittemore.util :refer [error]]
+  (:require [whittemore.core :refer [estimate q]]
+            [whittemore.util :refer [error]]
             [clojupyter.protocol.mime-convertible :as mc]
             [incanter.charts :as charts])
   (:import (org.jfree.chart JFreeChart ChartFrame)))
@@ -61,21 +62,24 @@
    (reduce-kv f {} pmf)))
 
 
-;; TODO: refactor as protocol?
-;; TODO: support EmpiricalCategorical
+;; TODO: cleanup / refactor as protocol?
 (defn plot-univariate
   "Alpha - subject to change.
-  Plot a univariate probability distribution.
-  Currently, only Categorical distributions are supported.
-  (EmpirialCategorical is not supported.)"
+  Plot a univariate probability distribution."
   ([distribution]
-   (let [dimension (-> distribution :pmf keys first count)
-         variable (-> distribution :pmf keys first keys first)]
+   (let [dist (if (:samples distribution) ; EmpiricalCategorical
+                (estimate distribution (q (-> distribution :support keys)))
+                distribution)
+         dimension (-> dist :pmf keys first count)
+         variable (-> dist :pmf keys first keys first)]
      (if (not= dimension 1)
        (error "dimension of pmf is not 1, unable to plot")
-       (plot-univariate distribution variable))))
+       (plot-univariate dist variable))))
   ([distribution variable]
-   (plot-p-map (marginal-pmf (:pmf distribution) variable))))
+   (let [dist (if (:samples distribution) ; EmpiricalCategorical
+                 (estimate distribution (q (-> distribution :support keys)))
+                 distribution)]
+   (plot-p-map (marginal-pmf (:pmf dist) variable)))))
 
 
 ;; test code
