@@ -535,9 +535,12 @@
 
 
 ;; TODO: add support for zID, IDC, IDC*
+;; TODO: update 'simplification pipeline'
 (defn identify
   "Returns a formula that computes query q from data d in model m.
-  Data defaults to P(v), i.e. joint distribution over all variables in m."
+  Data defaults to P(v), i.e. joint distribution over all variables in m.
+  
+  Note that formulas are not currently reduced to simpler forms."
   ([model query]
    (let [q (:form query)]
      (cond
