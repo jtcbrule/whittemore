@@ -49,13 +49,13 @@
 (defn head
   "Alpha - subject to change.
   Returns the first part of a dataset (default 10)."
-  [dataset & {:keys [n] :or {n 10}}]
-  (md/dataset (take n (md/row-maps dataset))))
+  ([dataset]    (head dataset 10))
+  ([dataset n]  (md/dataset (take n (md/row-maps dataset)))))
 
 
 (defn tail
   "Alpha - subject to change.
   Returns the last part of a dataset (default 10)."
-  [dataset & {:keys [n] :or {n 10}}]
-  (md/dataset (take-last n (md/row-maps dataset))))
+  ([dataset]    (tail dataset 10))
+  ([dataset n]  (md/dataset (take-last n (md/row-maps dataset)))))
 
