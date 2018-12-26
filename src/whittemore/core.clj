@@ -540,7 +540,7 @@
   "Returns a formula that computes query q from data d in model m.
   Data defaults to P(v), i.e. joint distribution over all variables in m.
   
-  Note that formulas are not currently reduced to simpler forms."
+  Note that formulas are not currently reduced to simpler, equivalent forms."
   ([model query]
    (let [q (:form query)]
      (cond
@@ -634,15 +634,16 @@
 
 
 ;; TODO: add optional laplace smoothings
-;; TODO: accept plain seq of samples for constructor
 ;; TODO: accept plain map (of pmf) for constructor
 (defrecord Categorical [pmf])
 (defrecord EmpiricalCategorical [samples support])
 
 (defn categorical
-  "Estimate a categorical distribution from a clojure.core.matrix dataset"
+  "Estimate a categorical distribution, where dataset is one of:
+  - a clojure.core.matrix dataset
+  - a seq of maps of random variables to values"
   [dataset & {:as options}]
-  (let [samples (md/row-maps dataset)
+  (let [samples (if (md/dataset? dataset) (md/row-maps dataset) dataset)
         support (all-vals samples)]
     (->EmpiricalCategorical samples support)))
 
