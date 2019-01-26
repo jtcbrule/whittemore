@@ -8,7 +8,8 @@
             [clojure.core.matrix.dataset :as md]
             [clojure.math.combinatorics :as combo]
             [clojure.set :refer [difference intersection subset? union]]
-            [clojure.string :as string]))
+            [clojure.string :as string]
+            [gorilla-renderable.core :as gr]))
 
 
 (defn transpose
@@ -870,6 +871,7 @@
   (cond
     (number? v) (str v)
     :else (format "\\text{\"%s\"}" v)))
+;   :else (format "\\text{$\"$%s$\"$}" v)))
 
 (defn set->str
   "Convert a set of nodes to a LaTeX string."
@@ -939,4 +941,23 @@
   (to-mime [this]
     (mc/stream-to-string
       {:text/latex (str "$$" (formula->latex this) "$$")})))
+
+
+;; Gorilla protocols
+
+(extend-protocol gr/Renderable
+  Model
+  (render [self]
+    {:type :html
+     :content (viz/model->img self)
+     :value (pr-str self)}))
+
+
+(extend-protocol gr/Renderable
+  Formula
+  (render [self]
+    {:type :latex
+     :content (formula->latex self)
+     :value (pr-str self)}))
+
 

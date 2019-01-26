@@ -12,5 +12,8 @@
                  [camel-snake-kebab "0.4.0"]
                  [dorothy "0.0.6"]
                  [semantic-csv "0.1.0"]
-                 [incanter/incanter-charts "1.9.3"]]
-  :plugins [[lein-jupyter "0.1.16"]])
+                 [incanter/incanter-charts "1.9.3"]
+                 [gorilla-renderable "2.0.0"]]
+  :plugins [[lein-jupyter "0.1.16"]
+            [org.clojars.benfb/lein-gorilla "0.5.3"]])
+
