@@ -2,7 +2,8 @@
   (:require [clojure.core.matrix.dataset :refer [row-maps column-names]]
             [clojure.core.matrix.impl.dataset]
             [clojure.string :refer [join]]
-            [clojupyter.protocol.mime-convertible :as mc]))
+            [clojupyter.protocol.mime-convertible :as mc]
+            [gorilla-renderable.core :as gr]))
 
 (defn to-string
   "Custom to-string for dataset html-table.
@@ -47,4 +48,12 @@
   (to-mime [this]
     (mc/stream-to-string
       {:text/html (dataset->html-str this)})))
+
+
+(extend-protocol gr/Renderable
+  clojure.core.matrix.impl.dataset.DataSet
+  (render [self]
+    {:type :html
+     :content (dataset->html-str self)
+     :value (pr-str self)}))
 
