@@ -535,6 +535,13 @@
   (instance? Fail f))
 
 
+;; TODO: refactor/cleanup
+(defn simplify-form
+  "Janky implementation of form(ula) simplification.
+  Alpha version"
+  [form]
+  form)
+
 ;; TODO: add support for zID, IDC, IDC*
 ;; TODO: update 'simplification pipeline'
 (defn identify
@@ -548,7 +555,8 @@
        (not (query? query)) (error "Unsupported Query type (check args)")
        (not (empty? (:given q))) (error "Unsupported Query type (:given)")
      :else
-       (let [form (id (:p q) (:do q) {:p (vertices model)} model)
+       (let [raw-form (id (:p q) (:do q) {:p (vertices model)} model)
+             form (simplify-form raw-form)
              hedges (extract-hedges form)]
          (cond
            (not (empty? hedges))
