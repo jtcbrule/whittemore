@@ -577,6 +577,10 @@
         {:p (difference (:p simplified-sum) (:sub form))}
         {:sum simplified-sum :sub (:sub form)}))
 
+    ; form is a hedge, return the hedge
+    (:hedge form)
+    form
+
     ; unknown type
     :else
     (error "Unsupported formula type")))
