@@ -22,20 +22,9 @@ Rich output (HTML, images, LaTeX) is available in [Jupyter](https://jupyter.org/
 [Graphviz](https://graphviz.org/download/) is recommended for rendering causal diagrams. Whittemore will automatically fallback to [viz.cljc](https://github.com/jebberjeb/viz.cljc) if Graphviz is not installed, but this is much slower.
 
 
-## Example Usage
+## Examples
 
-    (use 'whittemore.core)
-    
-    (identifiable?
-      (model
-        {:x [],
-         :z [:x],
-         :y [:z]}
-        #{:x :y})
-      (data [:x :y :z])
-      (q [:y] :do [:x]))
-    ;=> true
-
+The `notebooks` directory has several examples.
 
 ## License
 
