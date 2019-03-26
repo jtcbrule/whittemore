@@ -302,7 +302,7 @@
     p
     {:sub sub :sum p}))
 
-
+;;; FIXME: possible bug in definition (should :prod not be a set?)
 (defn product
   "Returns \\prod_i p_i.
   coll is a collection of probability functions."
@@ -536,11 +536,51 @@
 
 
 ;; TODO: refactor/cleanup
+(defn simplify-marginalize
+  "Rule: marginalize, if possible, else return"
+  [form]
+  (if (and (:sum form) (:p (:sum form)))
+    {:p (difference (:p (:sum form)) (:sub form))}
+    form))
+
+
+;; TODO: refactor/cleanup
+;; FIXME: check type of the :prod (vector? set?)
 (defn simplify-form
   "Janky implementation of form(ula) simplification.
-  Alpha version"
+  Alpha version."
   [form]
-  form)
+  (cond
+    ; form is a probability expression, return
+    (:p form) form 
+
+    ; form is a prod, recursively simplify
+    (:prod form)
+    {:prod (map simplify-form (:prod form))}
+
+    ; form is a fraction, return
+    (:numer form)
+    (let [simplified-numer (simplify-form (:numer form))
+          simplified-denom (simplify-form (:denom form))]
+      (if (and (:p simplified-numer) (:p simplified-denom)
+               (subset? (:p simplified-denom) (:p simplified-numer)))
+        {:p (difference (:p simplified-numer) (:p simplified-denom))
+         :given (:p simplified-denom)}
+      ;else
+        {:numer simplified-numer
+         :denom simplified-denom}))
+
+    ; form is a sum, recurse on :sum, then try to marginalize out
+    (:sum form)
+    (let [simplified-sum (simplify-form (:sum form))]
+      (if (:p simplified-sum) ; :sum part reduces to probability expression
+        {:p (difference (:p simplified-sum) (:sub form))}
+        {:sum simplified-sum :sub (:sub form)}))
+
+    ; unknown type
+    :else
+    (error "Unsupported formula type")))
+
 
 ;; TODO: add support for zID, IDC, IDC*
 ;; TODO: update 'simplification pipeline'
